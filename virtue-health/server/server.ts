@@ -1,14 +1,12 @@
-import { createApp, lakebase, server } from '@databricks/appkit';
-import { setupSampleLakebaseRoutes } from './routes/lakebase/todo-routes';
+import { analytics, createApp, server } from '@databricks/appkit';
 import { setupVirtueHealthRoutes } from './routes/virtue-health-routes';
 
 createApp({
   plugins: [
-    lakebase(),
+    analytics({}),
     server(),
   ],
   async onPluginsReady(appkit) {
-    await setupSampleLakebaseRoutes(appkit);
     setupVirtueHealthRoutes(appkit);
   },
 }).catch(console.error);

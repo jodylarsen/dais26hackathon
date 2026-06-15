@@ -2,12 +2,8 @@ bundle:
   name: virtue-health
 
 variables:
-  postgres_branch:
-    description: Full Lakebase Postgres branch resource name. Obtain by running `databricks postgres list-branches {project-name}`, select the desired item from the output array and use its .name value. Requires the project resource name.
-  postgres_database:
-    description: Full Lakebase Postgres database resource name. Obtain by running `databricks postgres list-databases {branch-name}`, select the desired item from the output array and use its .name value. Requires the branch resource name.
-  postgres_project:
-    description: Full Lakebase Postgres project resource name. Obtain by running `databricks postgres list-projects`, select the desired item from the output array and use its .name value.
+  warehouse_id:
+    description: SQL Warehouse ID for analytics queries. Obtain from the workspace SQL Warehouses page.
 
 resources:
   apps:
@@ -15,17 +11,16 @@ resources:
       name: "virtue-health"
       description: "Healthcare data explorer for DAIS 2026 — facilities, district health indicators, and pin codes"
       source_code_path: ./
-      # Uncomment to enable on behalf of user API scopes. Available scopes: sql, dashboards.genie, files.files, serving.serving-endpoints
-      # user_api_scopes:
-      #   - sql
 
-      # The resources which this app has access to.
       resources:
-        - name: postgres
-          postgres:
-            branch: ${var.postgres_branch}
-            database: ${var.postgres_database}
-            permission: CAN_CONNECT_AND_CREATE
+        - name: warehouse
+          sql_warehouse:
+            id: ${var.warehouse_id}
+            permission: CAN_USE
+
+      env:
+        - name: DATABRICKS_WAREHOUSE_ID
+          valueFrom: warehouse
 
 targets:
   default:
@@ -34,6 +29,4 @@ targets:
       host: https://dbc-0a01f518-764a.cloud.databricks.com
 
     variables:
-      postgres_branch: projects/virtue-health/branches/production
-      postgres_database: projects/virtue-health/branches/production/databases/databricks-postgres
-      postgres_project: projects/virtue-health
+      warehouse_id: 5b2b29cce22aa2c4
