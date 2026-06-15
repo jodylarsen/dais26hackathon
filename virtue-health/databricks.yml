@@ -13,14 +13,10 @@ resources:
       source_code_path: ./
 
       resources:
-        - name: warehouse
+        - name: sql-warehouse
           sql_warehouse:
             id: ${var.warehouse_id}
             permission: CAN_USE
-
-      env:
-        - name: DATABRICKS_WAREHOUSE_ID
-          valueFrom: warehouse
 
 targets:
   default:
