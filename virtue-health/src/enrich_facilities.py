@@ -4,24 +4,29 @@
 # MAGIC %md
 # MAGIC ## Enrich Facilities: Bronze → Silver
 # MAGIC
-# MAGIC Reads `facilities` (read-only source), applies quality fixes and coordinate /
-# MAGIC address backfill from enrichment tables, writes `facilities_silver`.
+# MAGIC Reads `facilities` (read-only source), applies quality fixes, an LLM-based
+# MAGIC column-alignment pass, and coordinate / address backfill from enrichment tables.
+# MAGIC Writes `facilities_silver`.
 # MAGIC
-# MAGIC | # | Issue | Fix |
-# MAGIC |---|-------|-----|
-# MAGIC | 1 | Null bytes (`\x00`) in text fields | `TRANSLATE` strip |
-# MAGIC | 2 | Empty strings masquerading as values | `NULLIF(TRIM(…), '')` |
-# MAGIC | 3 | Coordinates outside India bounding box | Nullify → re-fill from enrichment |
-# MAGIC | 4 | `NULL source_types` → negative trust-weight in scoring | Coalesce → `''` |
-# MAGIC | 5 | Inconsistent state name casing / old names | `INITCAP` + alias map → `state_canonical` |
-# MAGIC | 6 | Missing `address_city` / `address_stateorregion` | Pincode regex → GeoNames backfill |
-# MAGIC | 7 | Missing `address_district` for NFHS district joins | Pincode lookup |
-# MAGIC | 8 | Missing / invalid coordinates | Wikidata → OSM → Overture → GeoNames-pin → GeoNames-city |
+# MAGIC | Phase | Fix |
+# MAGIC |-------|-----|
+# MAGIC | 1 — Text cleaning | Strip `\x00`, trim, `''` → NULL, fix `source_types` NULL |
+# MAGIC | 1 — Coord validation | Nullify coords outside India bbox |
+# MAGIC | 2 — LLM alignment | Parallel LLM calls flag rows where data landed in wrong column |
+# MAGIC | 3 — Enrichment joins | Wikidata / OSM / Overture / GeoNames fill missing coords + address |
+# MAGIC | 3 — State normalization | `INITCAP` + alias map → `state_canonical` for NFHS joins |
+# MAGIC | 3 — District backfill | Pincode lookup → `address_district` for NFHS district joins |
 
 # COMMAND ----------
 
+import json
+import re
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from pyspark.sql import functions as F
 from pyspark.sql.functions import broadcast
+from pyspark.sql.types import LongType, StringType, StructField, StructType
 
 CATALOG = "dais27hack"
 SCHEMA  = "virtue_foundation_dataset_silver"
@@ -31,18 +36,20 @@ OUT     = f"{CATALOG}.{SCHEMA}.facilities_silver"
 INDIA_LAT_MIN, INDIA_LAT_MAX = 6.0,  37.5
 INDIA_LON_MIN, INDIA_LON_MAX = 68.0, 97.5
 
+# Columns the LLM is allowed to correct
+CORRECTABLE_COLS = [
+    "name", "organization_type", "capability",
+    "address_city", "address_stateorregion", "description",
+]
+
 # COMMAND ----------
 
-# Load source
 fac = spark.table(SRC)
 total_src = fac.count()
 print(f"Source: {SRC}  rows={total_src:,}  cols={len(fac.columns)}")
 
 # COMMAND ----------
-# ── Step 1: Text cleaning ────────────────────────────────────────────────────
-#
-# Columns that may contain null bytes (0x00) or should be treated as NULL
-# when blank. We translate out the null byte, trim, and convert '' → NULL.
+# ── Phase 1: Text cleaning ───────────────────────────────────────────────────
 
 TEXT_COLS = [c for c in [
     "name", "description", "address_city", "address_stateorregion",
@@ -65,7 +72,10 @@ if "source_types" in fac.columns:
         F.coalesce(clean_str(F.col("source_types")), F.lit("")),
     )
 
-# Validate coordinates: cast to DOUBLE and nullify anything outside India
+# Stable surrogate row key — unique_id has known duplicates in source
+cleaned = cleaned.withColumn("_row_id", F.monotonically_increasing_id())
+
+# Validate and cast coordinates; nullify anything outside India
 cleaned = (
     cleaned
     .withColumn("_lat0", F.col("latitude").cast("double"))
@@ -89,24 +99,208 @@ cleaned = (
     .drop("latitude", "longitude", "_lat0", "_lon0")
 )
 
-n_bad = (
-    fac
-    .filter(
-        F.col("latitude").cast("double").isNotNull()
-        & ~F.col("latitude").cast("double").between(INDIA_LAT_MIN, INDIA_LAT_MAX)
-    )
-    .count()
-)
+n_bad  = fac.filter(F.col("latitude").cast("double").isNotNull() & ~F.col("latitude").cast("double").between(INDIA_LAT_MIN, INDIA_LAT_MAX)).count()
 n_null = cleaned.filter(F.col("_lat_ok").isNull()).count()
 print(f"Coords outside India bbox (nullified): {n_bad:,}")
 print(f"Rows needing coordinate enrichment:     {n_null:,}")
 
 # COMMAND ----------
-# ── Step 2: Build enrichment lookup tables ───────────────────────────────────
+# ── Phase 2: LLM column alignment ───────────────────────────────────────────
 #
-# Every lookup uses a unique column prefix so multi-table joins stay unambiguous.
+# Detects rows where a column's value looks wrong for that column (typical of
+# CSV/Excel shifts: a stray comma in a facility name splits the row mid-field,
+# pushing all subsequent values one column to the right).
+#
+# Each suspicious row is sent to a Databricks-hosted LLM in parallel; the
+# model returns a JSON correction map that is joined back and applied.
 
-# GeoNames — one representative row per pincode (for precise point coords)
+# 2a. Discover best available foundation-model endpoint
+from mlflow.deployments import get_deploy_client
+
+_LLM_CANDIDATES = [
+    "databricks-meta-llama-3-3-70b-instruct",
+    "databricks-meta-llama-3-1-70b-instruct",
+    "databricks-dbrx-instruct",
+    "databricks-mixtral-8x7b-instruct",
+]
+
+_deploy_client = get_deploy_client("databricks")
+LLM_ENDPOINT   = None
+
+for _ep in _LLM_CANDIDATES:
+    try:
+        _deploy_client.predict(
+            endpoint=_ep,
+            inputs={"messages": [{"role": "user", "content": "ping"}], "max_tokens": 3},
+        )
+        LLM_ENDPOINT = _ep
+        print(f"LLM endpoint: {LLM_ENDPOINT}")
+        break
+    except Exception as _e:
+        print(f"  {_ep}: unavailable ({_e})")
+
+if not LLM_ENDPOINT:
+    print("WARNING: no LLM endpoint reachable — skipping column-alignment pass")
+
+# COMMAND ----------
+
+# 2b. Detect suspicious rows (lightweight regex heuristics)
+LLM_CAP      = 5_000   # max suspicious rows to send to LLM
+LLM_WORKERS  = 10      # concurrent calls
+
+PHONE_PAT  = r"(\+91|\b0\d{9,10}\b|\b\d{3}[-.\s]\d{3}[-.\s]\d{4}\b)"
+ADDR_WORDS = r"(?i)\b(sector|road|street|nagar|colony|near|ward|block|gate|marg|chowk|bazar|plot|flat|floor)\b"
+FAC_WORDS  = r"(?i)\b(hospital|clinic|medical|health\s*cent(re|er)|nursing\s*home|dispensary|PHC|CHC|diagnostic)\b"
+
+suspicious_df = (
+    cleaned
+    .filter(
+        F.col("name").rlike(PHONE_PAT)
+        | (F.col("name").rlike(ADDR_WORDS) & F.col("name").rlike(r"^\d"))
+        | F.col("address_city").rlike(FAC_WORDS)
+        | F.col("capability").rlike(ADDR_WORDS)
+        | (F.length(F.col("organization_type")) > 60)
+    )
+    .select("_row_id", *[c for c in CORRECTABLE_COLS if c in cleaned.columns])
+    .limit(LLM_CAP)
+)
+
+sus_rows = suspicious_df.collect()
+print(f"Suspicious rows to review: {len(sus_rows):,}")
+
+# COMMAND ----------
+
+# 2c. LLM call function
+
+_COL_DEFS = """- name: facility name (e.g. "Apollo Hospital", "Govt. PHC Raipur")
+- organization_type: short type label (e.g. "Hospital", "Clinic", "PHC", "Pharmacy")
+- capability: care level (e.g. "Primary Care", "Secondary Care", "Tertiary Care")
+- address_city: city name only (e.g. "Mumbai", "Bangalore")
+- address_stateorregion: Indian state or UT (e.g. "Maharashtra", "Karnataka")
+- description: free-text description of the facility"""
+
+def _build_prompt(row_dict):
+    payload = {k: v for k, v in row_dict.items() if k != "_row_id" and v is not None}
+    return (
+        "You are a data quality expert for Indian healthcare facility records.\n\n"
+        "Review this record. Identify ONLY columns where the value clearly belongs in a "
+        "different column (column misalignment from CSV/Excel parsing errors — NOT other "
+        "data quality issues).\n\n"
+        f"Record:\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
+        f"Column definitions:\n{_COL_DEFS}\n\n"
+        "Respond with valid JSON ONLY. If no misalignment, return {\"column_corrections\": {}}.\n"
+        "If misalignment found, include only the corrected columns with corrected values "
+        "(use null to blank a field):\n"
+        "{\"column_corrections\": {\"column_name\": \"corrected value or null\", ...}}"
+    )
+
+def _parse_json(text):
+    """Extract the first JSON object from LLM output (handles surrounding prose)."""
+    start = text.find("{")
+    if start == -1:
+        return {}
+    depth = 0
+    for i, ch in enumerate(text[start:], start):
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(text[start : i + 1])
+                except json.JSONDecodeError:
+                    pass
+                break
+    return {}
+
+def _call_llm(row, retries=2):
+    """Call LLM for one suspicious row. Returns (row_id, {col: corrected_val})."""
+    row_dict = row.asDict()
+    prompt   = _build_prompt(row_dict)
+    for attempt in range(retries + 1):
+        try:
+            resp = _deploy_client.predict(
+                endpoint=LLM_ENDPOINT,
+                inputs={
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 256,
+                    "temperature": 0.0,
+                },
+            )
+            text = resp["choices"][0]["message"]["content"]
+            obj  = _parse_json(text)
+            fixes = {
+                k: (None if v in (None, "null", "NULL", "") else str(v))
+                for k, v in obj.get("column_corrections", {}).items()
+                if k in CORRECTABLE_COLS
+            }
+            return (row_dict["_row_id"], fixes)
+        except Exception as e:
+            if attempt < retries:
+                time.sleep(2 ** attempt)
+            else:
+                return (row_dict["_row_id"], {})
+    return (row_dict["_row_id"], {})
+
+# COMMAND ----------
+
+# 2d. Run LLM calls in parallel and collect corrections
+
+all_corrections = {}   # {_row_id: {col: new_val}}
+
+if LLM_ENDPOINT and sus_rows:
+    with ThreadPoolExecutor(max_workers=LLM_WORKERS) as pool:
+        futures = {pool.submit(_call_llm, row): row["_row_id"] for row in sus_rows}
+        for i, future in enumerate(as_completed(futures), 1):
+            row_id, fixes = future.result()
+            if fixes:
+                all_corrections[row_id] = fixes
+            if i % 100 == 0:
+                print(f"  LLM: {i:,}/{len(sus_rows):,} — {len(all_corrections):,} corrections so far")
+
+    print(f"LLM corrections: {len(all_corrections):,} rows out of {len(sus_rows):,} reviewed")
+else:
+    print("Skipping LLM pass (no endpoint or no suspicious rows)")
+
+# COMMAND ----------
+
+# 2e. Apply corrections to `cleaned` via join on _row_id
+
+if all_corrections:
+    fix_schema = StructType(
+        [StructField("_row_id", LongType(), False)]
+        + [StructField(f"_fix_{c}", StringType(), True) for c in CORRECTABLE_COLS]
+    )
+
+    fix_rows = []
+    for row_id, col_fixes in all_corrections.items():
+        row = {"_row_id": row_id}
+        for c in CORRECTABLE_COLS:
+            row[f"_fix_{c}"] = col_fixes.get(c)  # None = no correction for this col
+        fix_rows.append(row)
+
+    fix_df  = spark.createDataFrame(fix_rows, schema=fix_schema)
+    cleaned = cleaned.join(broadcast(fix_df), "_row_id", "left")
+
+    for c in CORRECTABLE_COLS:
+        fc = f"_fix_{c}"
+        if c in cleaned.columns and fc in cleaned.columns:
+            # _fix_<col> is non-null only when the LLM provided a replacement value
+            cleaned = cleaned.withColumn(
+                c,
+                F.when(F.col(fc).isNotNull(), F.col(fc)).otherwise(F.col(c)),
+            )
+
+    cleaned = cleaned.drop(*[f"_fix_{c}" for c in CORRECTABLE_COLS])
+    print(f"Applied LLM corrections to {len(all_corrections):,} rows")
+
+# COMMAND ----------
+# ── Phase 3: Enrichment lookups ──────────────────────────────────────────────
+#
+# All lookup DataFrames use unique column prefixes to avoid ambiguity across
+# the multi-table join chain below.
+
+# GeoNames — one row per pincode (precise point)
 geo_pin = (
     spark.table(f"{CATALOG}.{SCHEMA}.geonames_pincodes")
     .select(
@@ -120,11 +314,11 @@ geo_pin = (
     .dropDuplicates(["gp_pin"])
 )
 
-# GeoNames — centroid per city name (fallback when only city is known)
+# GeoNames — city centroid (fallback when only city name is known)
 geo_city = (
     spark.table(f"{CATALOG}.{SCHEMA}.geonames_pincodes")
     .groupBy(
-        F.lower(F.trim(F.regexp_replace(F.col("place_name"), r"\d{6}", ""))).alias("gc_city_key")
+        F.trim(F.lower(F.regexp_replace(F.col("place_name"), r"\d{6}", ""))).alias("gc_city_key")
     )
     .agg(
         F.avg(F.col("latitude").cast("double")).alias("gc_lat"),
@@ -133,7 +327,7 @@ geo_city = (
     .filter(F.col("gc_city_key").isNotNull() & (F.col("gc_city_key") != ""))
 )
 
-# Pincode lookup — canonical state / district from India Post (or GeoNames fallback)
+# Pincode lookup — canonical state / district from India Post
 pin_lkp = (
     spark.table(f"{CATALOG}.{SCHEMA}.postalpincode_lookup")
     .select(
@@ -144,7 +338,7 @@ pin_lkp = (
     .dropDuplicates(["pl_pin"])
 )
 
-# Wikidata — GPS coords for known Indian hospitals, keyed by lowercase name
+# Wikidata — GPS for known Indian hospitals by name
 wiki_lkp = (
     spark.table(f"{CATALOG}.{SCHEMA}.wikidata_hospitals")
     .filter(F.col("latitude").isNotNull() & F.col("longitude").isNotNull())
@@ -156,7 +350,7 @@ wiki_lkp = (
     .filter(F.col("wk_name").isNotNull())
 )
 
-# OSM / Overture-derived — GPS keyed by name + state (reduces false positives vs name-only)
+# OSM / Overture-derived — GPS by name + state (name-only would have too many false positives)
 osm_lkp = (
     spark.table(f"{CATALOG}.{SCHEMA}.osm_india_facilities")
     .filter(F.col("latitude").isNotNull() & F.col("name").isNotNull())
@@ -171,7 +365,7 @@ osm_lkp = (
     )
 )
 
-# Overture Maps — GPS keyed by name + state
+# Overture Maps — GPS by name + state
 ov_lkp = (
     spark.table(f"{CATALOG}.{SCHEMA}.overture_india_places")
     .filter(F.col("latitude").isNotNull() & F.col("name").isNotNull())
@@ -187,13 +381,12 @@ ov_lkp = (
 )
 
 # COMMAND ----------
-# ── Step 3: State alias map ──────────────────────────────────────────────────
+# ── Phase 3b: State alias map ────────────────────────────────────────────────
 #
-# Maps historic / misspelled / all-caps state names to the canonical form used
-# in NFHS-5 (state_ut column). INITCAP handles the common case of wrong casing.
+# Resolves historic names, misspellings, and casing variants to the canonical
+# form used in NFHS-5 (the `state_ut` column in nfhs_5_district_health_indicators).
 
 STATE_ALIASES = broadcast(spark.createDataFrame([
-    # old name            → canonical NFHS name
     ("orissa",                        "Odisha"),
     ("uttaranchal",                   "Uttarakhand"),
     ("pondicherry",                   "Puducherry"),
@@ -211,7 +404,7 @@ STATE_ALIASES = broadcast(spark.createDataFrame([
 ], ["sa_key", "sa_canonical"]))
 
 # COMMAND ----------
-# ── Step 4: Add join keys and perform all enrichment joins ───────────────────
+# ── Phase 3c: Join keys + enrichment joins ───────────────────────────────────
 
 df = (
     cleaned
@@ -223,18 +416,16 @@ df = (
             F.regexp_extract(F.col("address_city"), r"(\d{6})", 1),
         ),
     )
-    # Name key: lowercase + strip non-alphanumeric (for Wikidata) — reuse for OSM/Overture
     .withColumn("_name_key",  F.lower(F.trim(F.col("name"))))
-    # State key for OSM/Overture join
     .withColumn("_state_key", F.lower(F.trim(F.col("address_stateorregion"))))
-    # City key for GeoNames city-centroid join (strip any embedded pincode first)
+    # City key strips embedded pincode before matching GeoNames place_name
     .withColumn(
         "_city_key",
         F.trim(F.lower(F.regexp_replace(F.col("address_city"), r"\d{6}", ""))),
     )
 )
 
-# 4a. State alias resolution
+# State alias resolution → state_canonical
 df = (
     df
     .join(STATE_ALIASES, df["_state_key"] == F.col("sa_key"), "left")
@@ -245,70 +436,49 @@ df = (
     .drop("sa_key", "sa_canonical")
 )
 
-# 4b. GeoNames pincode join
-df = df.join(broadcast(geo_pin), df["_pin"] == geo_pin["gp_pin"], "left").drop("gp_pin")
+# Pincode-based joins (broadcast — small lookup tables)
+df = df.join(broadcast(geo_pin),  df["_pin"] == geo_pin["gp_pin"],   "left").drop("gp_pin")
+df = df.join(broadcast(pin_lkp),  df["_pin"] == pin_lkp["pl_pin"],   "left").drop("pl_pin")
 
-# 4c. Pincode lookup (state/district from India Post or GeoNames)
-df = df.join(broadcast(pin_lkp), df["_pin"] == pin_lkp["pl_pin"], "left").drop("pl_pin")
-
-# 4d. GeoNames city-centroid join
+# City-centroid join
 df = df.join(geo_city, df["_city_key"] == geo_city["gc_city_key"], "left").drop("gc_city_key")
 
-# 4e. Wikidata name-based GPS
+# Name-based GPS (broadcast wikidata — ~2.5K rows)
 df = df.join(broadcast(wiki_lkp), df["_name_key"] == wiki_lkp["wk_name"], "left").drop("wk_name")
 
-# 4f. OSM name+state GPS
+# Name + state GPS — OSM and Overture
 df = (
     df
-    .join(
-        osm_lkp,
-        (df["_name_key"] == osm_lkp["om_name"]) & (df["_state_key"] == osm_lkp["om_state"]),
-        "left",
-    )
+    .join(osm_lkp, (df["_name_key"] == osm_lkp["om_name"]) & (df["_state_key"] == osm_lkp["om_state"]), "left")
     .drop("om_name", "om_state")
 )
-
-# 4g. Overture name+state GPS
 df = (
     df
-    .join(
-        ov_lkp,
-        (df["_name_key"] == ov_lkp["ov_name"]) & (df["_state_key"] == ov_lkp["ov_state"]),
-        "left",
-    )
+    .join(ov_lkp, (df["_name_key"] == ov_lkp["ov_name"]) & (df["_state_key"] == ov_lkp["ov_state"]), "left")
     .drop("ov_name", "ov_state")
 )
 
 # COMMAND ----------
-# ── Step 5: Coalesce enriched values ────────────────────────────────────────
+# ── Phase 3d: Coalesce enriched values ──────────────────────────────────────
 
 df = (
     df
-    # Coordinates: valid original > Wikidata > OSM > Overture > GeoNames-pin > GeoNames-city
-    .withColumn(
-        "latitude",
-        F.coalesce("_lat_ok", "wk_lat", "om_lat", "ov_lat", "gp_lat", "gc_lat"),
-    )
-    .withColumn(
-        "longitude",
-        F.coalesce("_lon_ok", "wk_lon", "om_lon", "ov_lon", "gp_lon", "gc_lon"),
-    )
-    # Backfill address_city from OSM > Overture > GeoNames pincode lookup
+    # Coords: valid original → Wikidata → OSM → Overture → GeoNames-pin → GeoNames-city
+    .withColumn("latitude",  F.coalesce("_lat_ok", "wk_lat", "om_lat", "ov_lat", "gp_lat", "gc_lat"))
+    .withColumn("longitude", F.coalesce("_lon_ok", "wk_lon", "om_lon", "ov_lon", "gp_lon", "gc_lon"))
+    # Backfill address_city: OSM → Overture → GeoNames-pin
     .withColumn(
         "address_city",
         F.coalesce(F.col("address_city"), F.col("om_city"), F.col("ov_city"), F.col("gp_city")),
     )
-    # Backfill address_stateorregion from GeoNames pincode > pincode-lookup
+    # Backfill address_stateorregion: GeoNames-pin → pincode-lookup
     .withColumn(
         "address_stateorregion",
         F.coalesce(F.col("address_stateorregion"), F.col("gp_state"), F.col("pl_state")),
     )
-    # New: district from pincode lookup (preferred) or GeoNames
-    .withColumn(
-        "address_district",
-        F.coalesce(F.col("pl_district"), F.col("gp_district")),
-    )
-    # Provenance: which source provided the coordinates
+    # New: district for NFHS district-level joins
+    .withColumn("address_district", F.coalesce(F.col("pl_district"), F.col("gp_district")))
+    # Coordinate provenance
     .withColumn(
         "coord_source",
         F.when(F.col("_lat_ok").isNotNull(),  "original")
@@ -322,10 +492,11 @@ df = (
 )
 
 # COMMAND ----------
-# ── Step 6: Select final silver columns ─────────────────────────────────────
+# ── Final column selection ───────────────────────────────────────────────────
 #
-# Keep every original column (cleaned in-place) plus the three new enrichment
-# columns. Internal join-key and working columns are excluded by name.
+# Original columns (cleaned in-place) + three new enrichment columns.
+# All internal join-key and working columns (_row_id, _pin, _lat_ok, etc.)
+# are excluded because they are not listed.
 
 ORIGINAL_COLS = [c for c in fac.columns if c not in ("latitude", "longitude")]
 ENRICH_COLS   = ["address_district", "state_canonical", "coord_source"]
@@ -338,7 +509,7 @@ final = df.select(
 )
 
 # COMMAND ----------
-# ── Step 7: Write silver table ───────────────────────────────────────────────
+# ── Write silver table ───────────────────────────────────────────────────────
 
 final.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(OUT)
 
@@ -346,11 +517,9 @@ result = spark.table(OUT)
 total  = result.count()
 print(f"✓ {OUT}  rows={total:,}")
 
-# Coordinate source breakdown
 print("\nCoordinate source breakdown:")
 result.groupBy("coord_source").count().orderBy(F.desc("count")).show(truncate=False)
 
-# Remaining null rates
 null_lat      = result.filter(F.col("latitude").isNull()).count()
 null_state    = result.filter(F.col("state_canonical").isNull()).count()
 null_city     = result.filter(F.col("address_city").isNull()).count()
@@ -359,3 +528,4 @@ print(f"NULL latitude after enrichment:   {null_lat:,} / {total:,}  ({100*null_l
 print(f"NULL state_canonical:              {null_state:,} / {total:,}  ({100*null_state/total:.1f}%)")
 print(f"NULL address_city after backfill:  {null_city:,} / {total:,}  ({100*null_city/total:.1f}%)")
 print(f"NULL address_district:             {null_district:,} / {total:,}  ({100*null_district/total:.1f}%)")
+print(f"\nLLM column-alignment corrections applied: {len(all_corrections):,}")

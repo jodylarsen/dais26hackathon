@@ -1,0 +1,20 @@
+resources:
+  jobs:
+    enrich_facilities:
+      name: "[virtue-health] Enrich Facilities: Bronze → Silver"
+      tasks:
+        - task_key: enrich
+          notebook_task:
+            notebook_path: ../src/enrich_facilities.py
+          # no cluster config = serverless
+
+      # Run after each ingest job completes (or trigger manually)
+      # Downstream jobs (facility_capability_scoring) should read facilities_silver
+      schedule:
+        quartz_cron_expression: "0 30 5 * * ?"   # daily at 05:30 IST
+        timezone_id: "Asia/Kolkata"
+        pause_status: PAUSED
+
+      tags:
+        track: enrichment
+        layer: silver
