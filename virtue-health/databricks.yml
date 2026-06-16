@@ -27,7 +27,7 @@ targets:
   default:
     default: true
     workspace:
-      host: https://dbc-0a01f518-764a.cloud.databricks.com
+      host: https://dbc-db188da4-0821.cloud.databricks.com
 
     variables:
-      warehouse_id: 5b2b29cce22aa2c4
+      warehouse_id: b9df2b203f0736b7

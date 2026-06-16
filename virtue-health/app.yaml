@@ -1,6 +1,6 @@
 command: ['node', './dist/server.js']
 env:
   - name: DATABRICKS_WAREHOUSE_ID
-    value: 5b2b29cce22aa2c4
+    value: b9df2b203f0736b7
   - name: NODE_ENV
     value: production

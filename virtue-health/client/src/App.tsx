@@ -15,6 +15,7 @@ import { FacilitiesPage } from './pages/facilities/FacilitiesPage';
 import { DistrictsPage } from './pages/districts/DistrictsPage';
 import { DesertPage } from './pages/desert/DesertPage';
 import { DataReadinessPage } from './pages/data-readiness/DataReadinessPage';
+import { ReferralCopilotPage } from './pages/referral-copilot/ReferralCopilotPage';
 
 const mobileNavLinkClass = ({ isActive }: { isActive: boolean }) =>
   `block px-3 py-2 rounded-md text-sm font-medium transition-colors ${
@@ -50,6 +51,9 @@ function NavLinks({
       </NavLink>
       <NavLink to="/data-readiness" className={linkClass} onClick={onClick}>
         Data Readiness
+      </NavLink>
+      <NavLink to="/referral-copilot" className={linkClass} onClick={onClick}>
+        Referral Copilot
       </NavLink>
     </nav>
   );
@@ -130,6 +134,16 @@ function Layout() {
           >
             Data Readiness
           </NavLink>
+          <NavLink
+            to="/referral-copilot"
+            className={({ isActive }) =>
+              `px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                isActive ? 'bg-white/15 text-white' : 'text-white/70 hover:bg-white/10 hover:text-white'
+              }`
+            }
+          >
+            Referral Copilot
+          </NavLink>
         </div>
 
         {/* Mobile nav */}
@@ -185,6 +199,7 @@ const router = createBrowserRouter([
       { path: '/districts', element: <DistrictsPage />, errorElement: <RouteErrorPage /> },
       { path: '/desert', element: <DesertPage />, errorElement: <RouteErrorPage /> },
       { path: '/data-readiness', element: <DataReadinessPage />, errorElement: <RouteErrorPage /> },
+      { path: '/referral-copilot', element: <ReferralCopilotPage />, errorElement: <RouteErrorPage /> },
     ],
   },
 ]);

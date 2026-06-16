@@ -88,7 +88,7 @@ const FIELD_DEFS = [
   { col: 'equipment',             label: 'Equipment',          critical: false, isNumeric: false },
   { col: 'procedure',             label: 'Procedure',          critical: false, isNumeric: false },
   { col: 'address_city',          label: 'City',               critical: false, isNumeric: false },
-  { col: 'address_stateorregion', label: 'State',              critical: false, isNumeric: false },
+  { col: 'address_stateOrRegion', label: 'State',              critical: false, isNumeric: false },
   { col: 'address_country',       label: 'Country',            critical: false, isNumeric: false },
   { col: 'organization_type',     label: 'Organization Type',  critical: false, isNumeric: false },
   { col: 'facility_id',           label: 'Facility ID',        critical: true,  isNumeric: true  },
@@ -106,14 +106,14 @@ const DUPLICATES_SQL = `
   LIMIT 200`;
 
 const NULLBYTES_SQL = `
-  SELECT CAST(facility_id AS INT) AS facility_id, name, description, address_stateorregion
+  SELECT CAST(facility_id AS INT) AS facility_id, name, description, address_stateOrRegion
   FROM ${SRC}.facilities
   WHERE ${NULLBYTE_PRED}
   ${TIEBREAK}
   LIMIT 200`;
 
 const GEO_SQL = `
-  SELECT CAST(facility_id AS INT) AS facility_id, name, address_city, address_stateorregion
+  SELECT CAST(facility_id AS INT) AS facility_id, name, address_city, address_stateOrRegion
   FROM ${SRC}.facilities
   WHERE ${GEO_PRED}
   ${TIEBREAK}
@@ -127,14 +127,14 @@ const SOURCE_MISMATCH_SQL = `
   LIMIT 200`;
 
 const CONTRADICTIONS_SQL = `
-  SELECT CAST(facility_id AS INT) AS facility_id, name, capability, address_stateorregion
+  SELECT CAST(facility_id AS INT) AS facility_id, name, capability, address_stateOrRegion
   FROM ${SRC}.facilities
   WHERE ${CONTRADICTION_PRED}
   ${TIEBREAK}
   LIMIT 200`;
 
 const SUSPICIOUS_SQL = `
-  SELECT CAST(facility_id AS INT) AS facility_id, name, capability, address_stateorregion
+  SELECT CAST(facility_id AS INT) AS facility_id, name, capability, address_stateOrRegion
   FROM ${SRC}.facilities
   WHERE ${SUSPICIOUS_PRED}
   ${TIEBREAK}
@@ -187,13 +187,13 @@ const SCORE_LIGHT = `(
   (CASE WHEN latitude IS NULL OR TRIM(latitude) = '' THEN 1 ELSE 0 END) +
   (CASE WHEN longitude IS NULL OR TRIM(longitude) = '' THEN 1 ELSE 0 END) +
   (CASE WHEN address_city IS NULL OR TRIM(address_city) = '' THEN 1 ELSE 0 END) +
-  (CASE WHEN address_stateorregion IS NULL OR TRIM(address_stateorregion) = '' THEN 1 ELSE 0 END)
+  (CASE WHEN address_stateOrRegion IS NULL OR TRIM(address_stateOrRegion) = '' THEN 1 ELSE 0 END)
 )`;
 
 const TOP_RECORDS_SQL = `
   SELECT
     CAST(facility_id AS INT) AS facility_id,
-    name, address_city, address_stateorregion, capability, source_types, source_ids,
+    name, address_city, address_stateOrRegion, capability, source_types, source_ids,
     CAST(${SCORE_HEAVY} AS INT) AS heavy_score,
     CAST(${SCORE_HEAVY} + ${SCORE_LIGHT} AS INT) AS issue_score
   FROM ${SRC}.facilities
@@ -205,9 +205,12 @@ const FLAGGED_COUNT_SQL = `
     SELECT ${SCORE_HEAVY} AS heavy_score FROM ${SRC}.facilities
   ) WHERE heavy_score > 0`;
 
+interface QueryResult {
+  data: Record<string, unknown>[] | null;
+}
 interface AppKitWithAnalytics {
   analytics: {
-    query(sql: string): Promise<Record<string, unknown>[]>;
+    query(sql: string): Promise<QueryResult>;
   };
   server: {
     extend(fn: (app: Application) => void): void;
@@ -232,7 +235,7 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
       }).join(',\n      ');
       const sql = `SELECT CAST(COUNT(*) AS INT) AS total,\n      ${caseClauses}\n    FROM ${SRC}.facilities`;
       const rows = await appkit.analytics.query(sql);
-      const row = rows[0] ?? {};
+      const row = rows.data?.[0] ?? {};
       const total = Number(row.total ?? 0);
       const profile: FieldProfileRow[] = FIELD_DEFS.map(f => {
         const filled = Number(row[`${f.col}_filled`] ?? 0);
@@ -267,10 +270,10 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
           ),
         ]);
 
-        const totalFacilities = Number(facilitiesResult[0]?.total_facilities ?? 0);
-        const statesCovered = Number(nfhsResult[0]?.states_covered ?? 0);
-        const districtsCovered = Number(nfhsResult[0]?.districts_covered ?? 0);
-        const avgSexRatio = nfhsResult[0]?.avg_sex_ratio != null ? Number(nfhsResult[0].avg_sex_ratio) : null;
+        const totalFacilities = Number(facilitiesResult.data?.[0]?.total_facilities ?? 0);
+        const statesCovered = Number(nfhsResult.data?.[0]?.states_covered ?? 0);
+        const districtsCovered = Number(nfhsResult.data?.[0]?.districts_covered ?? 0);
+        const avgSexRatio = nfhsResult.data?.[0]?.avg_sex_ratio != null ? Number(nfhsResult.data[0].avg_sex_ratio) : null;
 
         res.json({ totalFacilities, statesCovered, districtsCovered, avgSexRatio, syncing: false });
       } catch (err) {
@@ -289,14 +292,14 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
 
         const conditions: string[] = [];
         if (search) conditions.push(`(name ILIKE '%${search.replace(/'/g, "''")}%' OR address_city ILIKE '%${search.replace(/'/g, "''")}%')`);
-        if (state) conditions.push(`address_stateorregion = '${state.replace(/'/g, "''")}'`);
+        if (state) conditions.push(`address_stateOrRegion = '${state.replace(/'/g, "''")}'`);
         const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
         const [dataResult, countResult] = await Promise.all([
           appkit.analytics.query(
             `SELECT
                facility_id, name, organization_type,
-               address_city, address_stateorregion, address_country
+               address_city, address_stateOrRegion, address_country
              FROM ${SRC}.facilities
              ${where}
              ORDER BY name ASC
@@ -307,9 +310,9 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
           ),
         ]);
 
-        const total = Number(countResult[0]?.total ?? 0);
+        const total = Number(countResult.data?.[0]?.total ?? 0);
         res.json({
-          facilities: dataResult,
+          facilities: dataResult.data ?? [],
           total,
           page,
           pageSize,
@@ -325,12 +328,16 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
     app.get('/api/facilities/states', async (_req, res) => {
       try {
         const result = await appkit.analytics.query(
-          `SELECT DISTINCT address_stateorregion AS state
+          `SELECT DISTINCT address_stateOrRegion AS state
            FROM ${SRC}.facilities
-           WHERE address_stateorregion IS NOT NULL AND address_stateorregion <> ''
-           ORDER BY address_stateorregion ASC`,
+           WHERE address_stateOrRegion IS NOT NULL
+             AND address_stateOrRegion <> ''
+             AND address_stateOrRegion RLIKE '^[A-Za-z]'
+             AND address_stateOrRegion NOT LIKE '{%'
+             AND LENGTH(TRIM(address_stateOrRegion)) BETWEEN 3 AND 60
+           ORDER BY state ASC`,
         );
-        res.json({ states: result.map((r) => r.state as string), syncing: false });
+        res.json({ states: (result.data ?? []).map((r) => r.state as string), syncing: false });
       } catch (err) {
         console.error('[facilities/states] Query failed:', err);
         res.status(500).json({ error: 'Failed to load states' });
@@ -353,7 +360,7 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
            ORDER BY state_ut ASC, district_name ASC`,
         );
 
-        res.json({ districts: result, syncing: false });
+        res.json({ districts: result.data ?? [], syncing: false });
       } catch (err) {
         console.error('[districts] Query failed:', err);
         res.status(500).json({ error: 'Failed to load districts' });
@@ -366,9 +373,9 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
           `SELECT DISTINCT state_ut AS state
            FROM ${SRC}.nfhs_5_district_health_indicators
            WHERE state_ut IS NOT NULL
-           ORDER BY state_ut ASC`,
+           ORDER BY state ASC`,
         );
-        res.json({ states: result.map((r) => r.state as string), syncing: false });
+        res.json({ states: (result.data ?? []).map((r) => r.state as string), syncing: false });
       } catch (err) {
         console.error('[districts/states] Query failed:', err);
         res.status(500).json({ error: 'Failed to load district states' });
@@ -401,7 +408,7 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
                1.0
              ) AS trust_weight,
              capability,
-             address_stateorregion
+             address_stateOrRegion
            FROM ${SRC}.facilities
            WHERE
              latitude IS NOT NULL AND longitude IS NOT NULL
@@ -410,8 +417,8 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
              ${capClause}`,
         );
 
-        setCached(cacheKey, result);
-        res.json({ points: result, syncing: false });
+        setCached(cacheKey, result.data ?? []);
+        res.json({ points: result.data ?? [], syncing: false });
       } catch (err) {
         console.error('[desert/heatmap-points] Query failed:', err);
         res.status(500).json({ error: 'Failed to load heatmap points' });
@@ -432,8 +439,8 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
         const result = await appkit.analytics.query(
           `WITH facility_state AS (
              SELECT
-               LOWER(TRIM(address_stateorregion)) AS state_key,
-               address_stateorregion,
+               LOWER(TRIM(address_stateOrRegion)) AS state_key,
+               address_stateOrRegion,
                COUNT(*) AS facility_count,
                AVG(
                  LEAST(
@@ -443,9 +450,9 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
                ) AS avg_trust_weight,
                COUNT(DISTINCT source_types) AS source_type_variants
              FROM ${SRC}.facilities
-             WHERE address_stateorregion IS NOT NULL AND address_stateorregion <> ''
+             WHERE address_stateOrRegion IS NOT NULL AND address_stateOrRegion <> ''
                ${capClause}
-             GROUP BY LOWER(TRIM(address_stateorregion)), address_stateorregion
+             GROUP BY LOWER(TRIM(address_stateOrRegion)), address_stateOrRegion
            ),
            nfhs_state AS (
              SELECT
@@ -466,7 +473,7 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
              GROUP BY LOWER(TRIM(state_ut)), state_ut
            )
            SELECT
-             COALESCE(ns.state_ut, fs.address_stateorregion) AS state,
+             COALESCE(ns.state_ut, fs.address_stateOrRegion) AS state,
              COALESCE(fs.facility_count, 0) AS facility_count,
              ROUND(COALESCE(fs.avg_trust_weight, 0), 3) AS avg_trust_weight,
              COALESCE(fs.source_type_variants, 0) AS source_type_variants,
@@ -490,7 +497,7 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
            ORDER BY gap_score DESC NULLS LAST`,
         );
 
-        const gaps = result.map((row) => {
+        const gaps = (result.data ?? []).map((row) => {
           const variants = Number(row.source_type_variants ?? 0);
           const confidence: 'high' | 'medium' | 'low' =
             variants >= 3 ? 'high' : variants >= 1 ? 'medium' : 'low';
@@ -518,12 +525,12 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
              SUM(CASE WHEN organization_type IS NOT NULL AND TRIM(organization_type) <> '' THEN 1 ELSE 0 END) AS has_org_type,
              SUM(CASE WHEN capability IS NOT NULL AND TRIM(capability) <> '' THEN 1 ELSE 0 END) AS has_capability,
              SUM(CASE WHEN address_city IS NOT NULL AND TRIM(address_city) <> '' THEN 1 ELSE 0 END) AS has_city,
-             SUM(CASE WHEN address_stateorregion IS NOT NULL AND TRIM(address_stateorregion) <> '' THEN 1 ELSE 0 END) AS has_state,
+             SUM(CASE WHEN address_stateOrRegion IS NOT NULL AND TRIM(address_stateOrRegion) <> '' THEN 1 ELSE 0 END) AS has_state,
              SUM(CASE WHEN source_types IS NOT NULL AND TRIM(source_types) <> ''
                   AND SIZE(SPLIT(NULLIF(TRIM(source_types), ''), ',')) >= 2 THEN 1 ELSE 0 END) AS multi_source
            FROM ${SRC}.facilities`,
         );
-        const row = result[0] ?? {};
+        const row = result.data?.[0] ?? {};
         res.json({
           metrics: {
             total:          Number(row.total          ?? 0),
@@ -555,7 +562,7 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
                AVG(LEAST(COALESCE(SIZE(SPLIT(NULLIF(TRIM(source_types), ''), ',')), 1) / 3.0, 1.0)),
                2
              ) AS avg_trust_weight,
-             COUNT(DISTINCT address_stateorregion) AS state_count
+             COUNT(DISTINCT address_stateOrRegion) AS state_count
            FROM ${SRC}.facilities
            WHERE capability IS NOT NULL AND TRIM(capability) <> ''
            GROUP BY COALESCE(NULLIF(TRIM(capability), ''), 'Unknown')
@@ -563,8 +570,8 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
            LIMIT 20`,
         );
 
-        setCached(cacheKey, result);
-        res.json({ summary: result, syncing: false });
+        setCached(cacheKey, result.data ?? []);
+        res.json({ summary: result.data ?? [], syncing: false });
       } catch (err) {
         console.error('[desert/capability-summary] Query failed:', err);
         res.status(500).json({ error: 'Failed to load capability summary' });
@@ -606,7 +613,7 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
 
         const listOf = (i: number): Record<string, unknown>[] => {
           const r = listSettled[i];
-          if (r.status === 'fulfilled') return r.value;
+          if (r.status === 'fulfilled') return r.value.data ?? [];
           console.error(`[readiness/issues] list query ${i} failed:`, r.reason);
           return [];
         };
@@ -621,7 +628,7 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
         };
         const anyListFailed = Object.values(listErrors).some(Boolean);
 
-        const c = countRows[0] ?? {};
+        const c = countRows.data?.[0] ?? {};
         const sparseFields = profileResult.profile
           .filter(f => f.fillRate < 0.5)
           .map(f => ({ key: f.key, label: f.label, fillRate: f.fillRate }));
@@ -673,13 +680,13 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
           appkit.analytics.query(FLAGGED_COUNT_SQL),
         ]);
         const num = (v: unknown) => Number(v ?? 0);
-        const records = recordRows.map(r => ({
+        const records = (recordRows.data ?? []).map(r => ({
           ...r,
           facility_id: num(r.facility_id),
           issue_score: num(r.issue_score),
           heavy_score: num(r.heavy_score),
         }));
-        const flaggedTotal = num(flaggedRows[0]?.flagged_count);
+        const flaggedTotal = num(flaggedRows.data?.[0]?.flagged_count);
 
         // Do not cache an empty result — prevents freezing a false "all clean" state.
         if (records.length > 0) setCached(TOP_RECORDS_CACHE_KEY, { records, flaggedTotal });
