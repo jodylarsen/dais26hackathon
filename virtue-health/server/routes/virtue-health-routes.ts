@@ -521,11 +521,26 @@ app.get('/api/summary', async (_req, res) => {
            ORDER BY gap_score DESC NULLS LAST`,
         );
 
+        const num = (v: unknown) => (v == null ? null : Number(v));
         const gaps = (result.data ?? []).map((row) => {
           const variants = Number(row.source_type_variants ?? 0);
           const confidence: 'high' | 'medium' | 'low' =
             variants >= 3 ? 'high' : variants >= 1 ? 'medium' : 'low';
-          return { ...row, confidence };
+          return {
+            ...row,
+            facility_count:       Number(row.facility_count       ?? 0),
+            avg_trust_weight:     Number(row.avg_trust_weight     ?? 0),
+            source_type_variants: variants,
+            supply_score:         Number(row.supply_score         ?? 0),
+            gap_score:            Number(row.gap_score            ?? 0),
+            demand_index:         num(row.demand_index),
+            district_count:       num(row.district_count),
+            avg_electricity:      num(row.avg_electricity),
+            avg_water:            num(row.avg_water),
+            avg_sanitation:       num(row.avg_sanitation),
+            avg_birth_reg:        num(row.avg_birth_reg),
+            confidence,
+          };
         });
 
         setCached(cacheKey, gaps);
