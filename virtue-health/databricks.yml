@@ -1,6 +1,11 @@
 bundle:
   name: virtue-health
 
+sync:
+  include:
+    - dist/
+    - client/dist/
+
 variables:
   warehouse_id:
     description: SQL Warehouse ID for analytics queries. Obtain from the workspace SQL Warehouses page.

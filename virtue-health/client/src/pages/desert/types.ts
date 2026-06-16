@@ -11,7 +11,7 @@ export interface StateGap {
 }
 
 export interface HeatmapPoint {
-  unique_id: string;
+  facility_id: number;
   latitude: number;
   longitude: number;
   trust_weight: number;

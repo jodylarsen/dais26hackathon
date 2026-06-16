@@ -69,7 +69,7 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
         const [dataResult, countResult] = await Promise.all([
           appkit.analytics.query(
             `SELECT
-               unique_id, name, organization_type,
+               facility_id, name, organization_type,
                address_city, address_stateorregion, address_country
              FROM ${SRC}.facilities
              ${where}
@@ -164,7 +164,7 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
 
         const result = await appkit.analytics.query(
           `SELECT
-             unique_id,
+             facility_id,
              CAST(latitude AS DOUBLE)  AS latitude,
              CAST(longitude AS DOUBLE) AS longitude,
              LEAST(

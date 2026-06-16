@@ -14,24 +14,10 @@ export default defineConfig({
     outDir: path.resolve(__dirname, './dist'),
     emptyOutDir: true,
     sourcemap: process.env.NODE_ENV === 'development',
-    rollupOptions: {
-      output: {
-        manualChunks: (id) => {
-          if (id.includes('maplibre-gl') || id.includes('react-map-gl')) return 'maplibre';
-        },
-      },
-    },
+    rollupOptions: {},
   },
   optimizeDeps: {
-    include: [
-      'react',
-      'react-dom',
-      'react/jsx-dev-runtime',
-      'react/jsx-runtime',
-      'recharts',
-      'maplibre-gl',
-      'react-map-gl/maplibre',
-    ],
+    include: ['react', 'react-dom', 'react/jsx-dev-runtime', 'react/jsx-runtime', 'recharts'],
   },
   resolve: {
     alias: {

@@ -3,7 +3,7 @@ import { setupVirtueHealthRoutes } from './routes/virtue-health-routes';
 
 createApp({
   plugins: [
-    analytics({}),
+    analytics(),
     server(),
   ],
   async onPluginsReady(appkit) {

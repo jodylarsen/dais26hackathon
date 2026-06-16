@@ -5,22 +5,19 @@ import { DesertKpiBar } from './DesertKpiBar';
 import { DesertControls } from './DesertControls';
 import { DesertMap } from './DesertMap';
 import { DesertDetailPanel } from './DesertDetailPanel';
-import { useStateGaps, useHeatmapPoints, useCapabilitySummary } from './useDesertData';
+import { useStateGaps, useCapabilitySummary } from './useDesertData';
 import type { StateGap } from './types';
 
 export function DesertPage() {
   const [capabilityFilter, setCapabilityFilter] = useState('');
-  const [showHeatmap, setShowHeatmap] = useState(true);
-  const [showChoropleth, setShowChoropleth] = useState(true);
   const [showConfidenceFilter, setShowConfidenceFilter] = useState(false);
   const [selectedGap, setSelectedGap] = useState<StateGap | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
 
   const { gaps, loading: gapsLoading, error: gapsError, syncing: gapsSyncing } = useStateGaps(capabilityFilter);
-  const { points, loading: pointsLoading, syncing: pointsSyncing } = useHeatmapPoints(capabilityFilter);
   const { summary } = useCapabilitySummary();
 
-  const isSyncing = gapsSyncing || pointsSyncing;
+  const isSyncing = gapsSyncing;
 
   function handleStateSelect(gap: StateGap) {
     setSelectedGap(gap);
@@ -66,25 +63,18 @@ export function DesertPage() {
         capability={capabilityFilter}
         onCapabilityChange={setCapabilityFilter}
         summary={summary}
-        showHeatmap={showHeatmap}
-        onToggleHeatmap={() => setShowHeatmap((v) => !v)}
-        showChoropleth={showChoropleth}
-        onToggleChoropleth={() => setShowChoropleth((v) => !v)}
         showConfidenceFilter={showConfidenceFilter}
         onToggleConfidenceFilter={() => setShowConfidenceFilter((v) => !v)}
       />
 
-      {/* Map — fixed height to avoid mobile scroll conflict */}
-      <div className="relative rounded-lg border border-border/60 shadow-sm overflow-hidden"
-           style={{ height: 'calc(100vh - 420px)', minHeight: '400px' }}>
-        {gapsLoading || pointsLoading ? (
+      {/* Gap score bar chart */}
+      <div className="relative rounded-lg border border-border/60 shadow-sm overflow-hidden bg-white"
+           style={{ height: 'calc(100vh - 380px)', minHeight: '400px' }}>
+        {gapsLoading ? (
           <Skeleton className="w-full h-full rounded-none" />
         ) : (
           <DesertMap
-            points={points}
             gaps={gaps}
-            showHeatmap={showHeatmap}
-            showChoropleth={showChoropleth}
             showConfidenceFilter={showConfidenceFilter}
             onStateSelect={handleStateSelect}
           />

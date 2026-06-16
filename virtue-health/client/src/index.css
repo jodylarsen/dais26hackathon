@@ -1,5 +1,4 @@
 @import "@databricks/appkit-ui/styles.css";
-@import "maplibre-gl/dist/maplibre-gl.css";
 
 :root {
   /* --radius: 0.625rem;

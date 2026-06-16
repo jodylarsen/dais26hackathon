@@ -17,7 +17,7 @@ import {
 import { Search, ChevronLeft, ChevronRight, AlertCircle, Building2 } from 'lucide-react';
 
 interface Facility {
-  unique_id: string;
+  facility_id: number;
   name: string;
   organization_type: string;
   address_city: string;
@@ -207,7 +207,7 @@ export function FacilitiesPage() {
                     ))
                   : (data?.facilities ?? []).map((f) => (
                       <tr
-                        key={f.unique_id}
+                        key={f.facility_id}
                         className="border-b last:border-0 hover:bg-muted/20 transition-colors"
                       >
                         <td className="px-4 py-3 font-medium text-foreground max-w-xs">

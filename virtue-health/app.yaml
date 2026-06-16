@@ -1,4 +1,6 @@
-command: ['npm', 'run', 'start']
+command: ['node', './dist/server.js']
 env:
-  - name: LAKEBASE_ENDPOINT
-    valueFrom: postgres
+  - name: DATABRICKS_WAREHOUSE_ID
+    value: 5b2b29cce22aa2c4
+  - name: NODE_ENV
+    value: production
