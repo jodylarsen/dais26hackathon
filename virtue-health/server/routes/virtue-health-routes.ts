@@ -88,7 +88,7 @@ const FIELD_DEFS = [
   { col: 'equipment',             label: 'Equipment',          critical: false, isNumeric: false },
   { col: 'procedure',             label: 'Procedure',          critical: false, isNumeric: false },
   { col: 'address_city',          label: 'City',               critical: false, isNumeric: false },
-  { col: 'state', label: 'State',              critical: false, isNumeric: false },
+  { col: 'address_stateOrRegion', label: 'State',              critical: false, isNumeric: false },
   { col: 'address_country',       label: 'Country',            critical: false, isNumeric: false },
   { col: 'organization_type',     label: 'Organization Type',  critical: false, isNumeric: false },
   { col: 'facility_id',           label: 'Facility ID',        critical: true,  isNumeric: true  },
@@ -106,14 +106,14 @@ const DUPLICATES_SQL = `
   LIMIT 200`;
 
 const NULLBYTES_SQL = `
-  SELECT CAST(facility_id AS INT) AS facility_id, name, description, state
+  SELECT CAST(facility_id AS INT) AS facility_id, name, description, address_stateOrRegion AS state
   FROM ${SRC}.facilities
   WHERE ${NULLBYTE_PRED}
   ${TIEBREAK}
   LIMIT 200`;
 
 const GEO_SQL = `
-  SELECT CAST(facility_id AS INT) AS facility_id, name, address_city, state
+  SELECT CAST(facility_id AS INT) AS facility_id, name, address_city, address_stateOrRegion AS state
   FROM ${SRC}.facilities
   WHERE ${GEO_PRED}
   ${TIEBREAK}
@@ -127,14 +127,14 @@ const SOURCE_MISMATCH_SQL = `
   LIMIT 200`;
 
 const CONTRADICTIONS_SQL = `
-  SELECT CAST(facility_id AS INT) AS facility_id, name, capability, state
+  SELECT CAST(facility_id AS INT) AS facility_id, name, capability, address_stateOrRegion AS state
   FROM ${SRC}.facilities
   WHERE ${CONTRADICTION_PRED}
   ${TIEBREAK}
   LIMIT 200`;
 
 const SUSPICIOUS_SQL = `
-  SELECT CAST(facility_id AS INT) AS facility_id, name, capability, state
+  SELECT CAST(facility_id AS INT) AS facility_id, name, capability, address_stateOrRegion AS state
   FROM ${SRC}.facilities
   WHERE ${SUSPICIOUS_PRED}
   ${TIEBREAK}
@@ -187,13 +187,13 @@ const SCORE_LIGHT = `(
   (CASE WHEN latitude IS NULL OR TRIM(latitude) = '' THEN 1 ELSE 0 END) +
   (CASE WHEN longitude IS NULL OR TRIM(longitude) = '' THEN 1 ELSE 0 END) +
   (CASE WHEN address_city IS NULL OR TRIM(address_city) = '' THEN 1 ELSE 0 END) +
-  (CASE WHEN state IS NULL OR TRIM(state) = '' THEN 1 ELSE 0 END)
+  (CASE WHEN address_stateOrRegion IS NULL OR TRIM(address_stateOrRegion) = '' THEN 1 ELSE 0 END)
 )`;
 
 const TOP_RECORDS_SQL = `
   SELECT
     CAST(facility_id AS INT) AS facility_id,
-    name, address_city, state, capability, source_types, source_ids,
+    name, address_city, address_stateOrRegion AS state, capability, source_types, source_ids,
     CAST(${SCORE_HEAVY} AS INT) AS heavy_score,
     CAST(${SCORE_HEAVY} + ${SCORE_LIGHT} AS INT) AS issue_score
   FROM ${SRC}.facilities
@@ -255,7 +255,7 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
   }
 
   appkit.server.extend((app) => {
-    app.get('/api/summary', async (_req, res) => {
+app.get('/api/summary', async (_req, res) => {
       try {
         const [facilitiesResult, nfhsResult] = await Promise.all([
           appkit.analytics.query(
@@ -263,7 +263,7 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
           ),
           appkit.analytics.query(
             `SELECT
-               COUNT(DISTINCT state) AS states_covered,
+               COUNT(DISTINCT state_ut) AS states_covered,
                COUNT(DISTINCT district_name) AS districts_covered,
                ROUND(AVG(sex_ratio_total_f_per_1000_m), 1) AS avg_sex_ratio
              FROM ${SRC}.nfhs_5_district_health_indicators`,
@@ -335,7 +335,7 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
              AND address_stateOrRegion RLIKE '^[A-Za-z]'
              AND address_stateOrRegion NOT LIKE '{%'
              AND LENGTH(TRIM(address_stateOrRegion)) BETWEEN 3 AND 60
-           ORDER BY address_stateOrRegion ASC`,
+           ORDER BY state ASC`,
         );
         res.json({ states: (result.data ?? []).map((r) => r.state as string), syncing: false });
       } catch (err) {
@@ -394,9 +394,9 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
     app.get('/api/districts/states', async (_req, res) => {
       try {
         const result = await appkit.analytics.query(
-          `SELECT DISTINCT state AS state
+          `SELECT DISTINCT state_ut AS state
            FROM ${SRC}.nfhs_5_district_health_indicators
-           WHERE state IS NOT NULL
+           WHERE state_ut IS NOT NULL
            ORDER BY state ASC`,
         );
         res.json({ states: (result.data ?? []).map((r) => r.state as string), syncing: false });
@@ -432,7 +432,7 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
                1.0
              ) AS trust_weight,
              capability,
-             state
+             address_stateOrRegion AS state
            FROM ${SRC}.facilities
            WHERE
              latitude IS NOT NULL AND longitude IS NOT NULL
@@ -463,8 +463,8 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
         const result = await appkit.analytics.query(
           `WITH facility_state AS (
              SELECT
-               LOWER(TRIM(state)) AS state_key,
-               state,
+               LOWER(TRIM(address_stateOrRegion)) AS state_key,
+               address_stateOrRegion AS state,
                COUNT(*) AS facility_count,
                AVG(
                  LEAST(
@@ -474,14 +474,14 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
                ) AS avg_trust_weight,
                COUNT(DISTINCT source_types) AS source_type_variants
              FROM ${SRC}.facilities
-             WHERE state IS NOT NULL AND state <> ''
+             WHERE address_stateOrRegion IS NOT NULL AND address_stateOrRegion <> ''
                ${capClause}
-             GROUP BY LOWER(TRIM(state)), state
+             GROUP BY LOWER(TRIM(address_stateOrRegion)), address_stateOrRegion
            ),
            nfhs_state AS (
              SELECT
-               LOWER(TRIM(state)) AS state_key,
-               state,
+               LOWER(TRIM(state_ut)) AS state_key,
+               state_ut AS state,
                COUNT(DISTINCT district_name) AS district_count,
                ROUND(AVG(hh_electricity_pct), 1)                        AS avg_electricity,
                ROUND(AVG(hh_improved_water_pct), 1)                     AS avg_water,
@@ -494,7 +494,7 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
                  + (100.0 - COALESCE(AVG(child_u5_whose_birth_was_civil_reg_pct), 50))
                ) / 4.0, 1) AS demand_index
              FROM ${SRC}.nfhs_5_district_health_indicators
-             GROUP BY LOWER(TRIM(state)), state
+             GROUP BY LOWER(TRIM(state_ut)), state_ut
            )
            SELECT
              COALESCE(ns.state, fs.state) AS state,
@@ -549,7 +549,7 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
              SUM(CASE WHEN organization_type IS NOT NULL AND TRIM(organization_type) <> '' THEN 1 ELSE 0 END) AS has_org_type,
              SUM(CASE WHEN capability IS NOT NULL AND TRIM(capability) <> '' THEN 1 ELSE 0 END) AS has_capability,
              SUM(CASE WHEN address_city IS NOT NULL AND TRIM(address_city) <> '' THEN 1 ELSE 0 END) AS has_city,
-             SUM(CASE WHEN state IS NOT NULL AND TRIM(state) <> '' THEN 1 ELSE 0 END) AS has_state,
+             SUM(CASE WHEN address_stateOrRegion IS NOT NULL AND TRIM(address_stateOrRegion) <> '' THEN 1 ELSE 0 END) AS has_state,
              SUM(CASE WHEN source_types IS NOT NULL AND TRIM(source_types) <> ''
                   AND SIZE(SPLIT(NULLIF(TRIM(source_types), ''), ',')) >= 2 THEN 1 ELSE 0 END) AS multi_source
            FROM ${SRC}.facilities`,
@@ -586,7 +586,7 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
                AVG(LEAST(COALESCE(SIZE(SPLIT(NULLIF(TRIM(source_types), ''), ',')), 1) / 3.0, 1.0)),
                2
              ) AS avg_trust_weight,
-             COUNT(DISTINCT state) AS state_count
+             COUNT(DISTINCT address_stateOrRegion) AS state_count
            FROM ${SRC}.facilities
            WHERE capability IS NOT NULL AND TRIM(capability) <> ''
            GROUP BY COALESCE(NULLIF(TRIM(capability), ''), 'Unknown')
