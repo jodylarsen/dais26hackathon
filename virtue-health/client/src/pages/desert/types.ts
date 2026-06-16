@@ -8,6 +8,10 @@ export interface StateGap {
   supply_score: number;
   gap_score: number;
   confidence: 'high' | 'medium' | 'low';
+  avg_electricity: number | null;
+  avg_water: number | null;
+  avg_sanitation: number | null;
+  avg_birth_reg: number | null;
 }
 
 export interface HeatmapPoint {

@@ -226,6 +226,10 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
                LOWER(TRIM(state_ut)) AS state_key,
                state_ut,
                COUNT(DISTINCT district_name) AS district_count,
+               ROUND(AVG(hh_electricity_pct), 1)                        AS avg_electricity,
+               ROUND(AVG(hh_improved_water_pct), 1)                     AS avg_water,
+               ROUND(AVG(hh_use_improved_sanitation_pct), 1)            AS avg_sanitation,
+               ROUND(AVG(child_u5_whose_birth_was_civil_reg_pct), 1)    AS avg_birth_reg,
                ROUND((
                  (100.0 - COALESCE(AVG(hh_electricity_pct), 50))
                  + (100.0 - COALESCE(AVG(hh_improved_water_pct), 50))
@@ -242,6 +246,10 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
              COALESCE(fs.source_type_variants, 0) AS source_type_variants,
              ns.demand_index,
              ns.district_count,
+             ns.avg_electricity,
+             ns.avg_water,
+             ns.avg_sanitation,
+             ns.avg_birth_reg,
              ROUND(COALESCE(fs.facility_count, 0) * COALESCE(fs.avg_trust_weight, 0.0) / 10.0, 2) AS supply_score,
              ROUND(
                COALESCE(ns.demand_index, 50) /

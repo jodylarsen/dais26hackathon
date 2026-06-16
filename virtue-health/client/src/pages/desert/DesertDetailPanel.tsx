@@ -109,12 +109,12 @@ export function DesertDetailPanel({ open, onClose, gap }: DesertDetailPanelProps
               {gap.demand_index != null && (
                 <div className="space-y-3">
                   <div className="text-sm font-medium">NFHS-5 Indicators (state avg)</div>
-                  <PctBar value={null} label="Electricity access" />
-                  <PctBar value={null} label="Improved water source" />
-                  <PctBar value={null} label="Improved sanitation" />
-                  <PctBar value={null} label="Birth registration" />
+                  <PctBar value={gap.avg_electricity} label="Electricity access" />
+                  <PctBar value={gap.avg_water} label="Improved water source" />
+                  <PctBar value={gap.avg_sanitation} label="Improved sanitation" />
+                  <PctBar value={gap.avg_birth_reg} label="Birth registration" />
                   <p className="text-xs text-muted-foreground">
-                    Exact district values available on the Districts page.
+                    Averaged across NFHS-5 districts. Full breakdown on the Districts page.
                   </p>
                 </div>
               )}
