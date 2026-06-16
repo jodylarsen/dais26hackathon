@@ -91,7 +91,10 @@ export function useCapabilitySummary() {
     let cancelled = false;
 
     fetch('/api/desert/capability-summary')
-      .then((r) => r.json() as Promise<CapabilitySummaryResponse>)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json() as Promise<CapabilitySummaryResponse>;
+      })
       .then((data) => {
         if (cancelled) return;
         if (data.syncing) { setSyncing(true); setLoading(false); return; }
@@ -99,7 +102,12 @@ export function useCapabilitySummary() {
         setSummary(data.summary ?? []);
         setLoading(false);
       })
-      .catch(() => { if (!cancelled) setLoading(false); });
+      .catch((err) => {
+        if (!cancelled) {
+          console.error('[capability-summary] fetch failed:', err);
+          setLoading(false);
+        }
+      });
 
     return () => { cancelled = true; };
   }, []);

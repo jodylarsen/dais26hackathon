@@ -94,8 +94,8 @@ export function DesertDetailPanel({ open, onClose, gap }: DesertDetailPanelProps
               {/* Trust weight */}
               <div className="space-y-1">
                 <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">Avg facility trust weight</span>
-                  <span className="font-medium">{(gap.avg_trust_weight * 100).toFixed(0)}%</span>
+                  <span className="text-muted-foreground">Avg trust score (gold model)</span>
+                  <span className="font-medium">{(gap.avg_trust_weight * 10).toFixed(1)} / 10</span>
                 </div>
                 <div className="h-1.5 rounded-full bg-muted overflow-hidden">
                   <div

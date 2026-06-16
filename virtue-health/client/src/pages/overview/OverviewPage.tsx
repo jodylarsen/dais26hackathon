@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router';
 import { Card, CardContent, CardHeader, CardTitle, Skeleton } from '@databricks/appkit-ui/react';
-import { Building2, MapPin, Map, Users, AlertCircle, Database, BarChart3, Activity } from 'lucide-react';
+import { Building2, MapPin, Map, Users, AlertCircle, Database, BarChart3, Activity, Share2 } from 'lucide-react';
 
 interface SummaryData {
   totalFacilities: number;
@@ -42,6 +43,7 @@ function KpiCard({ title, value, description, icon, loading, accent = '#FF3621' 
 }
 
 export function OverviewPage() {
+  const navigate = useNavigate();
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -120,28 +122,43 @@ export function OverviewPage() {
             icon: <Building2 className="h-5 w-5" />,
             title: 'Facilities',
             color: '#FF3621',
+            href: '/facilities',
             desc: 'Searchable registry of healthcare facilities across India. Filter by state or search by name and city.',
           },
           {
             icon: <MapPin className="h-5 w-5" />,
             title: 'Districts',
             color: '#8b5cf6',
+            href: '/districts',
             desc: 'NFHS-5 district health indicators: electricity, improved water, sanitation, and civil birth registration.',
           },
           {
             icon: <BarChart3 className="h-5 w-5" />,
             title: 'Desert Planner',
             color: '#f97316',
+            href: '/desert',
             desc: 'Identifies highest-risk care gaps by comparing state facility supply against NFHS-5 demand indices.',
           },
           {
             icon: <Database className="h-5 w-5" />,
             title: 'Data Readiness',
             color: '#6366f1',
+            href: '/data-readiness',
             desc: 'Live data quality scores for the facilities table plus a prioritized enrichment roadmap across 10 free India datasets.',
           },
-        ].map(({ icon, title, color, desc }) => (
-          <Card key={title} className="shadow-sm border border-border/60 overflow-hidden">
+          {
+            icon: <Share2 className="h-5 w-5" />,
+            title: 'Referral Copilot',
+            color: '#06b6d4',
+            href: '/referral-copilot',
+            desc: 'AI-assisted patient referral routing: finds the best-fit facility by capability, proximity, and trust score with step-by-step guidance.',
+          },
+        ].map(({ icon, title, color, href, desc }) => (
+          <Card
+            key={title}
+            className="shadow-sm border border-border/60 overflow-hidden cursor-pointer transition-shadow hover:shadow-md"
+            onClick={() => navigate(href)}
+          >
             <div className="h-[3px]" style={{ background: `linear-gradient(90deg, ${color}, ${color}55)` }} />
             <CardContent className="pt-4 pb-4">
               <div className="flex items-center gap-2 mb-2">

@@ -8,25 +8,42 @@ import {
   Skeleton,
   Separator,
 } from '@databricks/appkit-ui/react';
-import { Building2, MapPin, Zap, Link, AlertCircle } from 'lucide-react';
+import { Building2, MapPin, Zap, Link, AlertCircle, ShieldCheck } from 'lucide-react';
+
+interface TrustScore {
+  capability: string;
+  trust_score: number;
+  trust_level: string;
+  data_completeness_score: number;
+  digital_footprint_score: number;
+  source_count: number;
+}
+
+const TRUST_LEVEL_CLASS: Record<string, string> = {
+  Strong:     'bg-green-100 text-green-800 border-green-200',
+  Partial:    'bg-blue-100 text-blue-800 border-blue-200',
+  Weak:       'bg-amber-100 text-amber-800 border-amber-200',
+  Suspicious: 'bg-red-100 text-red-800 border-red-200',
+};
 
 interface FacilityDetail {
   facility_id: number;
-  name: string | null;
-  description: string | null;
-  organization_type: string | null;
-  capability: string | null;
-  capability_status: string | null;
-  specialties: string | null;
-  equipment: string | null;
-  procedure: string | null;
-  source_types: string | null;
-  source_ids: string | null;
-  address_city: string | null;
-  state: string | null;
-  address_country: string | null;
-  latitude: string | null;
-  longitude: string | null;
+  name: unknown;
+  description: unknown;
+  organization_type: unknown;
+  capability: unknown;
+  capability_status: unknown;
+  specialties: unknown;
+  equipment: unknown;
+  procedure: unknown;
+  source_types: unknown;
+  source_ids: unknown;
+  address_city: unknown;
+  state: unknown;
+  address_country: unknown;
+  latitude: unknown;
+  longitude: unknown;
+  trust_scores: TrustScore[];
 }
 
 interface Props {
@@ -34,19 +51,25 @@ interface Props {
   onClose: () => void;
 }
 
-function Field({ label, value }: { label: string; value: string | null | undefined }) {
-  if (!value || value.trim() === '') return null;
+function Field({ label, value }: { label: string; value: unknown }) {
+  if (value == null) return null;
+  const str = Array.isArray(value) ? value.map(String).join(', ') : String(value);
+  if (!str.trim()) return null;
   return (
     <div>
       <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">{label}</p>
-      <p className="text-sm text-foreground break-words">{value}</p>
+      <p className="text-sm text-foreground break-words">{str}</p>
     </div>
   );
 }
 
-function TagList({ label, value }: { label: string; value: string | null | undefined }) {
-  if (!value || value.trim() === '') return null;
-  const tags = value.split(',').map((t) => t.trim()).filter(Boolean);
+function TagList({ label, value }: { label: string; value: unknown }) {
+  if (value == null) return null;
+  const tags: string[] = Array.isArray(value)
+    ? value.map(String).filter(Boolean)
+    : typeof value === 'string'
+      ? value.split(',').map((t) => t.trim()).filter(Boolean)
+      : [JSON.stringify(value)];
   if (tags.length === 0) return null;
   return (
     <div>
@@ -77,9 +100,9 @@ export function FacilityDetailDialog({ facilityId, onClose }: Props) {
       .finally(() => setLoading(false));
   }, [facilityId]);
 
-  const hasGps =
-    facility?.latitude && facility.longitude &&
-    facility.latitude.trim() !== '' && facility.longitude.trim() !== '';
+  const latNum = facility ? Number(facility.latitude) : NaN;
+  const lonNum = facility ? Number(facility.longitude) : NaN;
+  const hasGps = !isNaN(latNum) && !isNaN(lonNum) && !(latNum === 0 && lonNum === 0);
 
   return (
     <Dialog open={facilityId !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -141,7 +164,7 @@ export function FacilityDetailDialog({ facilityId, onClose }: Props) {
                   <div>
                     <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">GPS</p>
                     <p className="text-sm text-foreground font-mono">
-                      {Number(facility.latitude).toFixed(4)}, {Number(facility.longitude).toFixed(4)}
+                      {latNum.toFixed(4)}, {lonNum.toFixed(4)}
                     </p>
                   </div>
                 )}
@@ -184,6 +207,41 @@ export function FacilityDetailDialog({ facilityId, onClose }: Props) {
                   <TagList label="Source IDs" value={facility.source_ids} />
                 </div>
               </div>
+            )}
+
+            {/* Trust scores from gold scoring model */}
+            {facility.trust_scores.length > 0 && (
+              <>
+                <Separator />
+                <div>
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
+                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Trust Scores</span>
+                  </div>
+                  <div className="space-y-2">
+                    {facility.trust_scores.map((ts) => (
+                      <div key={ts.capability} className="flex items-center gap-2">
+                        <span className="text-xs text-foreground w-24 shrink-0">{ts.capability}</span>
+                        <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-emerald-500"
+                            style={{ width: `${(ts.trust_score / 10) * 100}%` }}
+                          />
+                        </div>
+                        <span className="text-xs tabular-nums text-muted-foreground w-8 text-right">
+                          {ts.trust_score.toFixed(1)}
+                        </span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium shrink-0 ${TRUST_LEVEL_CLASS[ts.trust_level] ?? 'bg-muted text-muted-foreground border-border'}`}>
+                          {ts.trust_level}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-2">
+                    Score 0–10 · 5 components: sources, completeness, digital, attributes, contact
+                  </p>
+                </div>
+              </>
             )}
           </div>
         )}

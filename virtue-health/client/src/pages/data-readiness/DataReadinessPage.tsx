@@ -326,6 +326,10 @@ export function DataReadinessPage() {
           <code className="bg-muted px-1 py-0.5 rounded text-[10px]">
             dais27hack.virtue_foundation_dataset_silver.facilities
           </code>{' '}
+          · 5-component trust scores pre-computed in{' '}
+          <code className="bg-muted px-1 py-0.5 rounded text-[10px]">
+            workspace.gold_virtue_foundation_dataset.facility_trust_scores
+          </code>{' '}
           via Databricks SQL Warehouse.
         </span>
       </div>

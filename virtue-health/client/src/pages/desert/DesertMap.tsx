@@ -7,7 +7,7 @@ import type { StateGap, HeatmapPoint } from './types';
 const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 const INITIAL_VIEW = { longitude: 82.5, latitude: 22.0, zoom: 4 };
 
-const normalizeKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+const normalizeKey = (s: unknown) => (s == null ? '' : String(s)).toLowerCase().replace(/[^a-z0-9]/g, '');
 
 interface GeoJsonFeature {
   type: 'Feature';
@@ -57,7 +57,7 @@ export function DesertMap({
     return {
       ...stateGeoJson,
       features: stateGeoJson.features.map((f) => {
-        const name = (f.properties?.NAME_1 ?? f.properties?.ST_NM ?? '') as string;
+        const name = String(f.properties?.state_name ?? '');
         const gap = lookup.get(normalizeKey(name));
         return {
           ...f,
@@ -85,7 +85,7 @@ export function DesertMap({
   const handleClick = (e: MapLayerMouseEvent) => {
     const feature = e.features?.[0];
     if (!feature) return;
-    const name = (feature.properties?.NAME_1 ?? feature.properties?.ST_NM ?? '') as string;
+    const name = String(feature.properties?.state_name ?? '');
     const gap = filteredGaps.find((g) => normalizeKey(g.state) === normalizeKey(name));
     if (gap) onStateSelect(gap);
   };

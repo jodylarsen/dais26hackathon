@@ -13,7 +13,8 @@ function setCached(key: string, data: unknown): void {
   desertCache.set(key, { data, expiresAt: Date.now() + DESERT_CACHE_TTL_MS });
 }
 
-const SRC = 'dais27hack.virtue_foundation_dataset_silver';
+const SRC  = 'dais27hack.virtue_foundation_dataset_silver';
+const GOLD = 'workspace.gold_virtue_foundation_dataset';
 
 // ── Track 4: module-scope interfaces + state ──────────────────────────────
 
@@ -45,7 +46,7 @@ const DUP_BASE = `facility_id IS NOT NULL`;
 // AC3: CHAR(0) = embedded NUL byte. If PF-4(c) finds backslash-zero instead,
 // swap to `name LIKE '%\\0%'` or OR both forms.
 const NULLBYTE_PRED =
-  `(instr(name, CHAR(0)) > 0 OR instr(description, CHAR(0)) > 0)`;
+  `(instr(TRY_CAST(name AS STRING), CHAR(0)) > 0 OR instr(TRY_CAST(description AS STRING), CHAR(0)) > 0)`;
 
 // AC4: STRING branch — lat/long stored as text (shipped routes use CAST(... AS DOUBLE)).
 // Includes (0,0) placeholder check per PF-2.
@@ -58,18 +59,18 @@ const GEO_PRED = `(${GEO_MISSING} AND ${CITY_PRESENT})`;
 // AC5: COALESCE(...,0) — deliberate divergence from shipped COALESCE(...,1) trust-weight
 // floor. Empty = 0 elements for element-count disagreement (PF-4(b)).
 const ELEM = (col: string) =>
-  `COALESCE(SIZE(SPLIT(NULLIF(TRIM(${col}), ''), ',')), 0)`;
+  `COALESCE(SIZE(SPLIT(NULLIF(TRY_CAST(${col} AS STRING), ''), ',')), 0)`;
 const SOURCE_MISMATCH_PRED = `(${ELEM('source_types')} <> ${ELEM('source_ids')})`;
 
 const CONTRADICTION_PRED =
-  `(capability IS NOT NULL AND TRIM(capability) <> ''` +
-  ` AND (equipment IS NULL OR TRIM(equipment) = '')` +
-  ` AND (specialties IS NULL OR TRIM(specialties) = ''))`;
+  `(capability IS NOT NULL AND TRY_CAST(capability AS STRING) <> ''` +
+  ` AND (equipment IS NULL OR TRY_CAST(equipment AS STRING) = '')` +
+  ` AND (specialties IS NULL OR TRY_CAST(specialties AS STRING) = ''))`;
 
 // SUSPICIOUS_PRED is a HEAVY signal — every Suspicious-tab row is also Flagged.
 const SUSPICIOUS_PRED =
-  `(capability IS NOT NULL AND TRIM(capability) <> ''` +
-  ` AND (source_types IS NULL OR TRIM(source_types) = ''))`;
+  `(capability IS NOT NULL AND TRY_CAST(capability AS STRING) <> ''` +
+  ` AND (source_types IS NULL OR TRY_CAST(source_types AS STRING) = ''))`;
 
 const TIEBREAK = `ORDER BY name ASC, facility_id ASC`;
 
@@ -106,35 +107,35 @@ const DUPLICATES_SQL = `
   LIMIT 200`;
 
 const NULLBYTES_SQL = `
-  SELECT CAST(facility_id AS INT) AS facility_id, name, description, address_stateOrRegion AS state
+  SELECT CAST(facility_id AS INT) AS facility_id, TRY_CAST(name AS STRING) AS name, TRY_CAST(description AS STRING) AS description, TRY_CAST(address_stateOrRegion AS STRING) AS state
   FROM ${SRC}.facilities
   WHERE ${NULLBYTE_PRED}
   ${TIEBREAK}
   LIMIT 200`;
 
 const GEO_SQL = `
-  SELECT CAST(facility_id AS INT) AS facility_id, name, address_city, address_stateOrRegion AS state
+  SELECT CAST(facility_id AS INT) AS facility_id, TRY_CAST(name AS STRING) AS name, TRY_CAST(address_city AS STRING) AS address_city, TRY_CAST(address_stateOrRegion AS STRING) AS state
   FROM ${SRC}.facilities
   WHERE ${GEO_PRED}
   ${TIEBREAK}
   LIMIT 200`;
 
 const SOURCE_MISMATCH_SQL = `
-  SELECT CAST(facility_id AS INT) AS facility_id, name, source_types, source_ids
+  SELECT CAST(facility_id AS INT) AS facility_id, TRY_CAST(name AS STRING) AS name, TRY_CAST(source_types AS STRING) AS source_types, TRY_CAST(source_ids AS STRING) AS source_ids
   FROM ${SRC}.facilities
   WHERE ${SOURCE_MISMATCH_PRED}
   ${TIEBREAK}
   LIMIT 200`;
 
 const CONTRADICTIONS_SQL = `
-  SELECT CAST(facility_id AS INT) AS facility_id, name, capability, address_stateOrRegion AS state
+  SELECT CAST(facility_id AS INT) AS facility_id, TRY_CAST(name AS STRING) AS name, TRY_CAST(capability AS STRING) AS capability, TRY_CAST(address_stateOrRegion AS STRING) AS state
   FROM ${SRC}.facilities
   WHERE ${CONTRADICTION_PRED}
   ${TIEBREAK}
   LIMIT 200`;
 
 const SUSPICIOUS_SQL = `
-  SELECT CAST(facility_id AS INT) AS facility_id, name, capability, address_stateOrRegion AS state
+  SELECT CAST(facility_id AS INT) AS facility_id, TRY_CAST(name AS STRING) AS name, TRY_CAST(capability AS STRING) AS capability, TRY_CAST(address_stateOrRegion AS STRING) AS state
   FROM ${SRC}.facilities
   WHERE ${SUSPICIOUS_PRED}
   ${TIEBREAK}
@@ -179,21 +180,26 @@ const SCORE_HEAVY = `(
 )`;
 
 const SCORE_LIGHT = `(
-  (CASE WHEN name IS NULL OR TRIM(name) = '' THEN 1 ELSE 0 END) +
-  (CASE WHEN capability IS NULL OR TRIM(capability) = '' THEN 1 ELSE 0 END) +
-  (CASE WHEN specialties IS NULL OR TRIM(specialties) = '' THEN 1 ELSE 0 END) +
-  (CASE WHEN equipment IS NULL OR TRIM(equipment) = '' THEN 1 ELSE 0 END) +
-  (CASE WHEN source_types IS NULL OR TRIM(source_types) = '' THEN 1 ELSE 0 END) +
-  (CASE WHEN latitude IS NULL OR TRIM(latitude) = '' THEN 1 ELSE 0 END) +
-  (CASE WHEN longitude IS NULL OR TRIM(longitude) = '' THEN 1 ELSE 0 END) +
-  (CASE WHEN address_city IS NULL OR TRIM(address_city) = '' THEN 1 ELSE 0 END) +
-  (CASE WHEN address_stateOrRegion IS NULL OR TRIM(address_stateOrRegion) = '' THEN 1 ELSE 0 END)
+  (CASE WHEN name IS NULL OR TRY_CAST(name AS STRING) = '' THEN 1 ELSE 0 END) +
+  (CASE WHEN capability IS NULL OR TRY_CAST(capability AS STRING) = '' THEN 1 ELSE 0 END) +
+  (CASE WHEN specialties IS NULL OR TRY_CAST(specialties AS STRING) = '' THEN 1 ELSE 0 END) +
+  (CASE WHEN equipment IS NULL OR TRY_CAST(equipment AS STRING) = '' THEN 1 ELSE 0 END) +
+  (CASE WHEN source_types IS NULL OR TRY_CAST(source_types AS STRING) = '' THEN 1 ELSE 0 END) +
+  (CASE WHEN latitude IS NULL OR TRY_CAST(latitude AS STRING) = '' THEN 1 ELSE 0 END) +
+  (CASE WHEN longitude IS NULL OR TRY_CAST(longitude AS STRING) = '' THEN 1 ELSE 0 END) +
+  (CASE WHEN address_city IS NULL OR TRY_CAST(address_city AS STRING) = '' THEN 1 ELSE 0 END) +
+  (CASE WHEN address_stateOrRegion IS NULL OR TRY_CAST(address_stateOrRegion AS STRING) = '' THEN 1 ELSE 0 END)
 )`;
 
 const TOP_RECORDS_SQL = `
   SELECT
     CAST(facility_id AS INT) AS facility_id,
-    name, address_city, address_stateOrRegion AS state, capability, source_types, source_ids,
+    TRY_CAST(name AS STRING) AS name,
+    TRY_CAST(address_city AS STRING) AS address_city,
+    TRY_CAST(address_stateOrRegion AS STRING) AS state,
+    TRY_CAST(capability AS STRING) AS capability,
+    TRY_CAST(source_types AS STRING) AS source_types,
+    TRY_CAST(source_ids AS STRING) AS source_ids,
     CAST(${SCORE_HEAVY} AS INT) AS heavy_score,
     CAST(${SCORE_HEAVY} + ${SCORE_LIGHT} AS INT) AS issue_score
   FROM ${SRC}.facilities
@@ -230,7 +236,7 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
       const caseClauses = FIELD_DEFS.map(f => {
         const check = f.isNumeric
           ? `${f.col} IS NOT NULL`
-          : `${f.col} IS NOT NULL AND TRIM(${f.col}) <> ''`;
+          : `TRY_CAST(${f.col} AS STRING) IS NOT NULL AND TRY_CAST(${f.col} AS STRING) <> ''`;
         return `CAST(COUNT(CASE WHEN ${check} THEN 1 END) AS INT) AS ${f.col}_filled`;
       }).join(',\n      ');
       const sql = `SELECT CAST(COUNT(*) AS INT) AS total,\n      ${caseClauses}\n    FROM ${SRC}.facilities`;
@@ -255,7 +261,7 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
   }
 
   appkit.server.extend((app) => {
-app.get('/api/summary', async (_req, res) => {
+    app.get('/api/summary', async (_req, res) => {
       try {
         const [facilitiesResult, nfhsResult] = await Promise.all([
           appkit.analytics.query(
@@ -348,20 +354,45 @@ app.get('/api/summary', async (_req, res) => {
       try {
         const id = parseInt(req.params.id, 10);
         if (isNaN(id)) { res.status(400).json({ error: 'Invalid facility ID' }); return; }
-        const result = await appkit.analytics.query(
-          `SELECT
-             facility_id, name, description, organization_type,
-             capability, capability_status, specialties, equipment, procedure,
-             source_types, source_ids,
-             address_city, address_stateOrRegion AS state, address_country,
-             latitude, longitude
-           FROM ${SRC}.facilities
-           WHERE facility_id = ${id}
-           LIMIT 1`,
-        );
+        const [result, trustResult] = await Promise.all([
+          appkit.analytics.query(
+            `SELECT
+               CAST(facility_id AS INT) AS facility_id,
+               TRY_CAST(name AS STRING) AS name,
+               TRY_CAST(description AS STRING) AS description,
+               TRY_CAST(organization_type AS STRING) AS organization_type,
+               TRY_CAST(capability AS STRING) AS capability,
+               TRY_CAST(capability_status AS STRING) AS capability_status,
+               TRY_CAST(specialties AS STRING) AS specialties,
+               TRY_CAST(equipment AS STRING) AS equipment,
+               TRY_CAST(procedure AS STRING) AS procedure,
+               TRY_CAST(source_types AS STRING) AS source_types,
+               TRY_CAST(source_ids AS STRING) AS source_ids,
+               TRY_CAST(address_city AS STRING) AS address_city,
+               TRY_CAST(address_stateOrRegion AS STRING) AS state,
+               TRY_CAST(address_country AS STRING) AS address_country,
+               TRY_CAST(latitude AS STRING) AS latitude,
+               TRY_CAST(longitude AS STRING) AS longitude
+             FROM ${SRC}.facilities
+             WHERE facility_id = ${id}
+             LIMIT 1`,
+          ),
+          appkit.analytics.query(
+            `SELECT
+               capability,
+               ROUND(trust_score, 1) AS trust_score,
+               trust_level,
+               ROUND(data_completeness_score, 2) AS data_completeness_score,
+               ROUND(digital_footprint_score, 2) AS digital_footprint_score,
+               source_count
+             FROM ${GOLD}.facility_trust_scores
+             WHERE CAST(facility_id AS STRING) = CAST(${id} AS STRING)
+             ORDER BY trust_score DESC`,
+          ).catch((): { data: Record<string, unknown>[] } => ({ data: [] })),
+        ]);
         const row = result.data?.[0];
         if (!row) { res.status(404).json({ error: 'Facility not found' }); return; }
-        res.json({ facility: row });
+        res.json({ facility: { ...row, trust_scores: trustResult.data ?? [] } });
       } catch (err) {
         console.error('[facilities/:id] Query failed:', err);
         res.status(500).json({ error: 'Failed to load facility' });
@@ -416,28 +447,34 @@ app.get('/api/summary', async (_req, res) => {
         if (cached) { res.json({ points: cached, syncing: false }); return; }
 
         const capClause = capability
-          ? `AND capability ILIKE '%${capability.replace(/'/g, "''")}%'`
+          ? `AND f.capability ILIKE '%${capability.replace(/'/g, "''")}%'`
+          : '';
+        const capFtsWhere = capability
+          ? `WHERE capability ILIKE '%${capability.replace(/'/g, "''")}%'`
           : '';
 
         const result = await appkit.analytics.query(
           `SELECT
-             facility_id,
-             CAST(latitude AS DOUBLE)  AS latitude,
-             CAST(longitude AS DOUBLE) AS longitude,
-             LEAST(
-               COALESCE(
-                 SIZE(SPLIT(NULLIF(TRIM(source_types), ''), ',')),
-                 1
-               ) / 3.0,
-               1.0
+             f.facility_id,
+             CAST(f.latitude AS DOUBLE)  AS latitude,
+             CAST(f.longitude AS DOUBLE) AS longitude,
+             COALESCE(
+               fts.trust_score / 10.0,
+               LEAST(COALESCE(SIZE(SPLIT(NULLIF(TRIM(f.source_types), ''), ',')), 1) / 3.0, 1.0)
              ) AS trust_weight,
-             capability,
-             address_stateOrRegion AS state
-           FROM ${SRC}.facilities
+             f.capability,
+             f.address_stateOrRegion AS state
+           FROM ${SRC}.facilities f
+           LEFT JOIN (
+             SELECT facility_id, MAX(trust_score) AS trust_score
+             FROM ${GOLD}.facility_trust_scores
+             ${capFtsWhere}
+             GROUP BY facility_id
+           ) fts ON CAST(f.facility_id AS STRING) = fts.facility_id
            WHERE
-             latitude IS NOT NULL AND longitude IS NOT NULL
-             AND CAST(latitude AS DOUBLE) BETWEEN 6.0 AND 37.5
-             AND CAST(longitude AS DOUBLE) BETWEEN 68.0 AND 97.5
+             f.latitude IS NOT NULL AND f.longitude IS NOT NULL
+             AND CAST(f.latitude AS DOUBLE) BETWEEN 6.0 AND 37.5
+             AND CAST(f.longitude AS DOUBLE) BETWEEN 68.0 AND 97.5
              ${capClause}`,
         );
 
@@ -456,27 +493,35 @@ app.get('/api/summary', async (_req, res) => {
         const cached = getCached<unknown[]>(cacheKey);
         if (cached) { res.json({ gaps: cached, syncing: false }); return; }
 
-        const capClause = capability
-          ? `AND capability ILIKE '%${capability.replace(/'/g, "''")}%'`
+        const capClause2 = capability
+          ? `AND f.capability ILIKE '%${capability.replace(/'/g, "''")}%'`
+          : '';
+        const capFtsWhere2 = capability
+          ? `WHERE capability ILIKE '%${capability.replace(/'/g, "''")}%'`
           : '';
 
         const result = await appkit.analytics.query(
-          `WITH facility_state AS (
+          `WITH scored AS (
+             SELECT facility_id, MAX(trust_score) AS trust_score
+             FROM ${GOLD}.facility_trust_scores
+             ${capFtsWhere2}
+             GROUP BY facility_id
+           ),
+           facility_state AS (
              SELECT
-               LOWER(TRIM(address_stateOrRegion)) AS state_key,
-               address_stateOrRegion AS state,
+               LOWER(TRIM(f.address_stateOrRegion)) AS state_key,
+               f.address_stateOrRegion AS state,
                COUNT(*) AS facility_count,
-               AVG(
-                 LEAST(
-                   COALESCE(SIZE(SPLIT(NULLIF(TRIM(source_types), ''), ',')), 1) / 3.0,
-                   1.0
-                 )
-               ) AS avg_trust_weight,
-               COUNT(DISTINCT source_types) AS source_type_variants
-             FROM ${SRC}.facilities
-             WHERE address_stateOrRegion IS NOT NULL AND address_stateOrRegion <> ''
-               ${capClause}
-             GROUP BY LOWER(TRIM(address_stateOrRegion)), address_stateOrRegion
+               AVG(COALESCE(
+                 s.trust_score / 10.0,
+                 LEAST(COALESCE(SIZE(SPLIT(NULLIF(TRIM(f.source_types), ''), ',')), 1) / 3.0, 1.0)
+               )) AS avg_trust_weight,
+               COUNT(DISTINCT f.source_types) AS source_type_variants
+             FROM ${SRC}.facilities f
+             LEFT JOIN scored s ON CAST(f.facility_id AS STRING) = s.facility_id
+             WHERE f.address_stateOrRegion IS NOT NULL AND f.address_stateOrRegion <> ''
+               ${capClause2}
+             GROUP BY LOWER(TRIM(f.address_stateOrRegion)), f.address_stateOrRegion
            ),
            nfhs_state AS (
              SELECT
@@ -547,7 +592,7 @@ app.get('/api/summary', async (_req, res) => {
         res.json({ gaps, syncing: false });
       } catch (err) {
         console.error('[desert/state-gaps] Query failed:', err);
-        res.status(500).json({ error: 'Failed to load state gaps' });
+        res.status(500).json({ error: 'Failed to load state gaps', detail: String(err) });
       }
     });
 
@@ -595,25 +640,20 @@ app.get('/api/summary', async (_req, res) => {
 
         const result = await appkit.analytics.query(
           `SELECT
-             COALESCE(NULLIF(TRIM(capability), ''), 'Unknown') AS capability,
-             COUNT(*) AS facility_count,
-             ROUND(
-               AVG(LEAST(COALESCE(SIZE(SPLIT(NULLIF(TRIM(source_types), ''), ',')), 1) / 3.0, 1.0)),
-               2
-             ) AS avg_trust_weight,
-             COUNT(DISTINCT address_stateOrRegion) AS state_count
-           FROM ${SRC}.facilities
-           WHERE capability IS NOT NULL AND TRIM(capability) <> ''
-           GROUP BY COALESCE(NULLIF(TRIM(capability), ''), 'Unknown')
-           ORDER BY facility_count DESC
-           LIMIT 20`,
+             capability,
+             COUNT(DISTINCT facility_id) AS facility_count,
+             ROUND(AVG(trust_score) / 10.0, 3) AS avg_trust_weight,
+             COUNT(DISTINCT state) AS state_count
+           FROM ${GOLD}.facility_trust_scores
+           GROUP BY capability
+           ORDER BY facility_count DESC`,
         );
 
         setCached(cacheKey, result.data ?? []);
         res.json({ summary: result.data ?? [], syncing: false });
       } catch (err) {
         console.error('[desert/capability-summary] Query failed:', err);
-        res.status(500).json({ error: 'Failed to load capability summary' });
+        res.status(500).json({ error: 'Failed to load capability summary', detail: String(err) });
       }
     });
 

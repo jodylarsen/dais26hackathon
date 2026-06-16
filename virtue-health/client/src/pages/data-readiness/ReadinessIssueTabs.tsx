@@ -4,6 +4,13 @@ import type {
   Duplicate, NullByteRecord, GeoContradiction, SourceMismatch,
   Issue, SparseField, IssueCounts, ListErrors,
 } from './types';
+
+function safeStr(v: unknown, fallback = '—'): string {
+  if (v == null) return fallback;
+  if (typeof v === 'string') return v || fallback;
+  if (Array.isArray(v)) return v.map(String).join(', ') || fallback;
+  return JSON.stringify(v);
+}
 import { PctBar } from './PctBar';
 
 function TabError() {
@@ -106,7 +113,7 @@ export function ReadinessIssueTabs({
                        {duplicates.map(r => (
                          <tr key={r.facility_id} className="border-b border-border/40 last:border-0">
                            <td className="py-1 pr-3 tabular-nums text-muted-foreground">{r.facility_id}</td>
-                           <td className="py-1 pr-3 text-foreground">{r.sample_name ?? '—'}</td>
+                           <td className="py-1 pr-3 text-foreground">{safeStr(r.sample_name)}</td>
                            <td className="py-1 tabular-nums font-medium">{r.dup_count}</td>
                          </tr>
                        ))}
@@ -136,8 +143,8 @@ export function ReadinessIssueTabs({
                        {nullBytes.map(r => (
                          <tr key={r.facility_id} className="border-b border-border/40 last:border-0">
                            <td className="py-1 pr-3 tabular-nums text-muted-foreground">{r.facility_id}</td>
-                           <td className="py-1 pr-3 text-foreground max-w-[200px] truncate">{r.name ?? '—'}</td>
-                           <td className="py-1 text-muted-foreground">{r.state ?? '—'}</td>
+                           <td className="py-1 pr-3 text-foreground max-w-[200px] truncate">{safeStr(r.name)}</td>
+                           <td className="py-1 text-muted-foreground">{safeStr(r.state)}</td>
                          </tr>
                        ))}
                      </tbody>
@@ -165,9 +172,9 @@ export function ReadinessIssueTabs({
                      <tbody>
                        {geoContradictions.map(r => (
                          <tr key={r.facility_id} className="border-b border-border/40 last:border-0">
-                           <td className="py-1 pr-3 text-foreground max-w-[160px] truncate">{r.name ?? '—'}</td>
-                           <td className="py-1 pr-3 text-muted-foreground">{r.address_city ?? '—'}</td>
-                           <td className="py-1 text-muted-foreground">{r.state ?? '—'}</td>
+                           <td className="py-1 pr-3 text-foreground max-w-[160px] truncate">{safeStr(r.name)}</td>
+                           <td className="py-1 pr-3 text-muted-foreground">{safeStr(r.address_city)}</td>
+                           <td className="py-1 text-muted-foreground">{safeStr(r.state)}</td>
                          </tr>
                        ))}
                      </tbody>
@@ -198,9 +205,9 @@ export function ReadinessIssueTabs({
                      <tbody>
                        {sourceMismatch.map(r => (
                          <tr key={r.facility_id} className="border-b border-border/40 last:border-0">
-                           <td className="py-1 pr-3 text-foreground max-w-[140px] truncate">{r.name ?? '—'}</td>
-                           <td className="py-1 pr-3 text-muted-foreground max-w-[120px] truncate">{r.source_types ?? '—'}</td>
-                           <td className="py-1 text-muted-foreground max-w-[120px] truncate">{r.source_ids ?? '—'}</td>
+                           <td className="py-1 pr-3 text-foreground max-w-[140px] truncate">{safeStr(r.name)}</td>
+                           <td className="py-1 pr-3 text-muted-foreground max-w-[120px] truncate">{safeStr(r.source_types)}</td>
+                           <td className="py-1 text-muted-foreground max-w-[120px] truncate">{safeStr(r.source_ids)}</td>
                          </tr>
                        ))}
                      </tbody>
@@ -228,9 +235,9 @@ export function ReadinessIssueTabs({
                      <tbody>
                        {contradictions.map(r => (
                          <tr key={r.facility_id} className="border-b border-border/40 last:border-0">
-                           <td className="py-1 pr-3 text-foreground max-w-[160px] truncate">{r.name ?? '—'}</td>
-                           <td className="py-1 pr-3 text-muted-foreground max-w-[130px] truncate">{r.capability ?? '—'}</td>
-                           <td className="py-1 text-muted-foreground">{r.state ?? '—'}</td>
+                           <td className="py-1 pr-3 text-foreground max-w-[160px] truncate">{safeStr(r.name)}</td>
+                           <td className="py-1 pr-3 text-muted-foreground max-w-[130px] truncate">{safeStr(r.capability)}</td>
+                           <td className="py-1 text-muted-foreground">{safeStr(r.state)}</td>
                          </tr>
                        ))}
                      </tbody>
@@ -261,9 +268,9 @@ export function ReadinessIssueTabs({
                      <tbody>
                        {suspicious.map(r => (
                          <tr key={r.facility_id} className="border-b border-border/40 last:border-0">
-                           <td className="py-1 pr-3 text-foreground max-w-[160px] truncate">{r.name ?? '—'}</td>
-                           <td className="py-1 pr-3 text-muted-foreground max-w-[130px] truncate">{r.capability ?? '—'}</td>
-                           <td className="py-1 text-muted-foreground">{r.state ?? '—'}</td>
+                           <td className="py-1 pr-3 text-foreground max-w-[160px] truncate">{safeStr(r.name)}</td>
+                           <td className="py-1 pr-3 text-muted-foreground max-w-[130px] truncate">{safeStr(r.capability)}</td>
+                           <td className="py-1 text-muted-foreground">{safeStr(r.state)}</td>
                          </tr>
                        ))}
                      </tbody>

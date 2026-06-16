@@ -87,6 +87,7 @@ export function ReferralCopilotPage() {
                 { source: 'Facility registry', table: 'facilities_live', status: 'Pending sync', ok: false },
                 { source: 'Pin code directory', table: 'india_post_pincode_directory_live', status: 'Pending sync', ok: false },
                 { source: 'NFHS-5 indicators', table: 'nfhs_5_district_health_indicators_live', status: 'Online', ok: true },
+                { source: 'Trust scores (gold)', table: 'gold.facility_trust_scores', status: 'Online', ok: true },
               ].map(({ source, table, status, ok }) => (
                 <tr key={table} className="border-b last:border-0">
                   <td className="px-4 py-3 text-foreground font-medium">{source}</td>

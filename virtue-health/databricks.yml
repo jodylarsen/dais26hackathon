@@ -1,10 +1,14 @@
 bundle:
   name: virtue-health
 
+include:
+  - resources/*.yml
+
 sync:
   include:
     - dist/
     - client/dist/
+    - src/
 
 variables:
   warehouse_id:

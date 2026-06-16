@@ -1,5 +1,5 @@
 import { createBrowserRouter, RouterProvider, NavLink, Outlet, useRouteError } from 'react-router';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { ErrorBoundary, ErrorDisplay } from './ErrorBoundary';
 import {
   Button,
@@ -7,15 +7,25 @@ import {
   SheetContent,
   SheetHeader,
   SheetTitle,
+  Skeleton,
   useIsMobile,
 } from '@databricks/appkit-ui/react';
 import { Menu, Activity } from 'lucide-react';
 import { OverviewPage } from './pages/overview/OverviewPage';
 import { FacilitiesPage } from './pages/facilities/FacilitiesPage';
 import { DistrictsPage } from './pages/districts/DistrictsPage';
-import { DesertPage } from './pages/desert/DesertPage';
 import { DataReadinessPage } from './pages/data-readiness/DataReadinessPage';
 import { ReferralCopilotPage } from './pages/referral-copilot/ReferralCopilotPage';
+
+const DesertPage = lazy(() => import('./pages/desert/DesertPage').then(m => ({ default: m.DesertPage })));
+
+function DesertPageSuspense() {
+  return (
+    <Suspense fallback={<div className="space-y-4 max-w-7xl"><Skeleton className="h-12 w-64" /><Skeleton className="h-[500px] w-full" /></div>}>
+      <DesertPage />
+    </Suspense>
+  );
+}
 
 const mobileNavLinkClass = ({ isActive }: { isActive: boolean }) =>
   `block px-3 py-2 rounded-md text-sm font-medium transition-colors ${
@@ -66,6 +76,11 @@ function Layout() {
   useEffect(() => {
     if (!isMobile) setMobileNavOpen(false); // eslint-disable-line react-hooks/set-state-in-effect
   }, [isMobile]);
+
+  useEffect(() => {
+    const t = setTimeout(() => { import('./pages/desert/DesertPage'); }, 3000);
+    return () => clearTimeout(t);
+  }, []);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -197,7 +212,7 @@ const router = createBrowserRouter([
       { path: '/', element: <OverviewPage />, errorElement: <RouteErrorPage /> },
       { path: '/facilities', element: <FacilitiesPage />, errorElement: <RouteErrorPage /> },
       { path: '/districts', element: <DistrictsPage />, errorElement: <RouteErrorPage /> },
-      { path: '/desert', element: <DesertPage />, errorElement: <RouteErrorPage /> },
+      { path: '/desert', element: <DesertPageSuspense />, errorElement: <RouteErrorPage /> },
       { path: '/data-readiness', element: <DataReadinessPage />, errorElement: <RouteErrorPage /> },
       { path: '/referral-copilot', element: <ReferralCopilotPage />, errorElement: <RouteErrorPage /> },
     ],

@@ -2,6 +2,13 @@ import { Card, CardContent, CardHeader, CardTitle, Skeleton } from '@databricks/
 import type { TopRecord } from './types';
 import { scoreColor } from './scoreColor';
 
+function safeStr(v: unknown, fallback = '—'): string {
+  if (v == null) return fallback;
+  if (typeof v === 'string') return v || fallback;
+  if (Array.isArray(v)) return v.map(String).join(', ') || fallback;
+  return JSON.stringify(v);
+}
+
 export function ReadinessTopRecords({
   records, loading,
 }: {
@@ -42,8 +49,8 @@ export function ReadinessTopRecords({
                 </thead>
                 <tbody>
                   {records.map(rec => {
-                    const srcRaw = rec.source_types?.trim();
-                    const srcDisplay = srcRaw ? rec.source_types : 'None';
+                    const srcRaw = String(rec.source_types ?? '').trim();
+                    const srcDisplay = srcRaw || 'None';
                     const srcIsNone = !srcRaw;
                     return (
                       <tr
@@ -51,10 +58,10 @@ export function ReadinessTopRecords({
                         className="border-b border-border/40 last:border-0"
                       >
                         <td className="py-1.5 pr-3 max-w-[180px] truncate text-foreground">
-                          {rec.name ?? '—'}
+                          {safeStr(rec.name)}
                         </td>
                         <td className="py-1.5 pr-3 text-muted-foreground">
-                          {rec.state ?? '—'}
+                          {safeStr(rec.state)}
                         </td>
                         <td className="py-1.5 pr-3">
                           <span className="font-semibold" style={{ color: scoreColor(rec.heavy_score) }}>
@@ -62,7 +69,7 @@ export function ReadinessTopRecords({
                           </span>
                         </td>
                         <td className="py-1.5 pr-3 max-w-[140px] truncate text-muted-foreground">
-                          {rec.capability ?? '—'}
+                          {safeStr(rec.capability)}
                         </td>
                         <td className="py-1.5">
                           {srcIsNone ? (
