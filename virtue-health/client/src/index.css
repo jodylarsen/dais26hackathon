@@ -1,4 +1,5 @@
 @import "@databricks/appkit-ui/styles.css";
+@import "maplibre-gl/dist/maplibre-gl.css";
 
 *, *::before, *::after {
   -webkit-font-smoothing: antialiased;

@@ -1,31 +1,28 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { AlertCircle, Info } from 'lucide-react';
 import { Skeleton } from '@databricks/appkit-ui/react';
 import { DesertKpiBar } from './DesertKpiBar';
 import { DesertControls } from './DesertControls';
-import { DesertMap } from './DesertMap';
 import { DesertDetailPanel } from './DesertDetailPanel';
-import { useStateGaps, useCapabilitySummary } from './useDesertData';
+import { useStateGaps, useHeatmapPoints, useCapabilitySummary } from './useDesertData';
 import type { StateGap } from './types';
 
-const GAP_LEGEND = [
-  { label: '< 10', desc: 'Low', color: '#86efac' },
-  { label: '10–25', desc: 'Moderate', color: '#fbbf24' },
-  { label: '25–50', desc: 'High', color: '#f97316' },
-  { label: '50–100', desc: 'Severe', color: '#ef4444' },
-  { label: '100+', desc: 'Critical', color: '#7f1d1d' },
-];
+// Lazy-load the map so the ~850 KB maplibre-gl chunk is only downloaded
+// when the user visits /desert, not on initial app load.
+const DesertMap = lazy(() =>
+  import('./DesertMap').then((m) => ({ default: m.DesertMap })),
+);
 
 export function DesertPage() {
   const [capabilityFilter, setCapabilityFilter] = useState('');
   const [showConfidenceFilter, setShowConfidenceFilter] = useState(false);
+  const [showHeatmap, setShowHeatmap] = useState(false);
   const [selectedGap, setSelectedGap] = useState<StateGap | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
 
   const { gaps, loading: gapsLoading, error: gapsError, syncing: gapsSyncing } = useStateGaps(capabilityFilter);
+  const { points, loading: pointsLoading } = useHeatmapPoints(showHeatmap ? capabilityFilter : '__skip__');
   const { summary } = useCapabilitySummary();
-
-  const isSyncing = gapsSyncing;
 
   function handleStateSelect(gap: StateGap) {
     setSelectedGap(gap);
@@ -48,10 +45,10 @@ export function DesertPage() {
         </div>
       )}
 
-      {isSyncing && !gapsError && (
+      {gapsSyncing && !gapsError && (
         <div className="flex items-center gap-2 px-4 py-3 rounded-lg border bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-950/40 dark:border-amber-800/50 dark:text-amber-300">
           <AlertCircle className="h-4 w-4 shrink-0" />
-          <span className="text-sm">Data syncing… chart will appear once the sync is complete.</span>
+          <span className="text-sm">Data syncing… map will appear once the sync is complete.</span>
         </div>
       )}
 
@@ -62,7 +59,7 @@ export function DesertPage() {
         <Info className="h-4 w-4 shrink-0 mt-0.5 text-blue-500 dark:text-blue-400" />
         <span>
           Facility counts are aggregated at the state level. Gap scores reflect state-wide
-          supply vs. demand and do not resolve within-state distribution. Click any bar
+          supply vs. demand and do not resolve within-state distribution. Click any state
           for details.
         </span>
       </div>
@@ -73,32 +70,28 @@ export function DesertPage() {
         summary={summary}
         showConfidenceFilter={showConfidenceFilter}
         onToggleConfidenceFilter={() => setShowConfidenceFilter((v) => !v)}
+        showHeatmap={showHeatmap}
+        onToggleHeatmap={() => setShowHeatmap((v) => !v)}
+        heatmapLoading={showHeatmap && pointsLoading}
       />
 
-      {/* Gap score legend */}
-      <div className="flex items-center gap-1 flex-wrap">
-        <span className="text-xs text-muted-foreground mr-1">Gap score:</span>
-        {GAP_LEGEND.map(({ label, desc, color }) => (
-          <div key={label} className="flex items-center gap-1 text-xs">
-            <div className="w-3 h-3 rounded-sm shrink-0" style={{ background: color }} />
-            <span className="text-muted-foreground">{label}</span>
-            <span className="font-medium text-foreground">{desc}</span>
-            {label !== '100+' && <span className="text-border mx-0.5">·</span>}
-          </div>
-        ))}
-      </div>
-
-      {/* Gap score bar chart */}
-      <div className="relative rounded-lg border border-border/60 shadow-sm overflow-hidden bg-card"
-           style={{ height: 'calc(100vh - 430px)', minHeight: '400px' }}>
+      {/* Map */}
+      <div
+        className="relative rounded-lg border border-border/60 shadow-sm overflow-hidden bg-card"
+        style={{ height: 'calc(100vh - 400px)', minHeight: '420px' }}
+      >
         {gapsLoading ? (
           <Skeleton className="w-full h-full rounded-none" />
         ) : (
-          <DesertMap
-            gaps={gaps}
-            showConfidenceFilter={showConfidenceFilter}
-            onStateSelect={handleStateSelect}
-          />
+          <Suspense fallback={<Skeleton className="w-full h-full rounded-none" />}>
+            <DesertMap
+              gaps={gaps}
+              points={showHeatmap ? points : []}
+              showHeatmap={showHeatmap}
+              showConfidenceFilter={showConfidenceFilter}
+              onStateSelect={handleStateSelect}
+            />
+          </Suspense>
         )}
       </div>
 

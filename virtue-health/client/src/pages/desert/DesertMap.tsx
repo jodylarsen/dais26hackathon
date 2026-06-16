@@ -1,106 +1,169 @@
-import { useMemo } from 'react';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Cell,
-  ResponsiveContainer,
-} from 'recharts';
-import type { StateGap } from './types';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import MapGL, { Source, Layer } from 'react-map-gl/maplibre';
+import type { MapLayerMouseEvent, MapRef } from 'react-map-gl/maplibre';
+import { DesertLegend } from './DesertLegend';
+import type { StateGap, HeatmapPoint } from './types';
+
+const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
+const INITIAL_VIEW = { longitude: 82.5, latitude: 22.0, zoom: 4 };
+
+const normalizeKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+interface GeoJsonFeature {
+  type: 'Feature';
+  properties: Record<string, unknown>;
+  geometry: unknown;
+}
+
+interface GeoJsonCollection {
+  type: 'FeatureCollection';
+  features: GeoJsonFeature[];
+}
 
 interface DesertMapProps {
   gaps: StateGap[];
+  points: HeatmapPoint[];
+  showHeatmap: boolean;
   showConfidenceFilter: boolean;
   onStateSelect: (gap: StateGap) => void;
-  // kept for API compat — unused without map
-  points?: unknown[];
-  showHeatmap?: boolean;
-  showChoropleth?: boolean;
-}
-
-function gapColor(score: number): string {
-  if (score >= 100) return '#7f1d1d';
-  if (score >= 50)  return '#ef4444';
-  if (score >= 25)  return '#f97316';
-  if (score >= 10)  return '#fbbf24';
-  return '#86efac';
 }
 
 export function DesertMap({
   gaps,
+  points,
+  showHeatmap,
   showConfidenceFilter,
   onStateSelect,
 }: DesertMapProps) {
-  const data = useMemo(() => {
-    let list = [...gaps].sort((a, b) => b.gap_score - a.gap_score).slice(0, 25);
-    if (showConfidenceFilter) list = list.filter((g) => g.confidence === 'high');
-    return list;
-  }, [gaps, showConfidenceFilter]);
+  const mapRef = useRef<MapRef>(null);
+  const [stateGeoJson, setStateGeoJson] = useState<GeoJsonCollection | null>(null);
 
-  if (data.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-        No states match the current filters.
-      </div>
-    );
-  }
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/india-states.geojson')
+      .then((r) => r.json())
+      .then((d) => { if (!cancelled) setStateGeoJson(d as GeoJsonCollection); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const filteredGaps = useMemo(
+    () => showConfidenceFilter ? gaps.filter((g) => g.confidence === 'high') : gaps,
+    [gaps, showConfidenceFilter],
+  );
+
+  const enriched = useMemo(() => {
+    if (!stateGeoJson) return null;
+    const lookup = new Map(filteredGaps.map((g) => [normalizeKey(g.state), g]));
+    return {
+      ...stateGeoJson,
+      features: stateGeoJson.features.map((f) => {
+        const name = (f.properties?.NAME_1 ?? f.properties?.ST_NM ?? '') as string;
+        const gap = lookup.get(normalizeKey(name));
+        return {
+          ...f,
+          properties: {
+            ...f.properties,
+            gap_score: gap?.gap_score ?? null,
+            confidence: gap?.confidence ?? 'low',
+            facility_count: gap?.facility_count ?? 0,
+            state_matched: name,
+          },
+        };
+      }),
+    };
+  }, [stateGeoJson, filteredGaps]);
+
+  const heatmapGeoJson = useMemo(() => ({
+    type: 'FeatureCollection' as const,
+    features: points.map((p) => ({
+      type: 'Feature' as const,
+      geometry: { type: 'Point' as const, coordinates: [p.longitude, p.latitude] },
+      properties: { trust_weight: p.trust_weight },
+    })),
+  }), [points]);
+
+  const handleClick = (e: MapLayerMouseEvent) => {
+    const feature = e.features?.[0];
+    if (!feature) return;
+    const name = (feature.properties?.NAME_1 ?? feature.properties?.ST_NM ?? '') as string;
+    const gap = filteredGaps.find((g) => normalizeKey(g.state) === normalizeKey(name));
+    if (gap) onStateSelect(gap);
+  };
 
   return (
-    <ResponsiveContainer width="100%" height="100%">
-      <BarChart
-        data={data}
-        layout="vertical"
-        margin={{ top: 4, right: 32, bottom: 4, left: 120 }}
-        onClick={(e: unknown) => {
-          const ev = e as { activePayload?: Array<{ payload?: StateGap }> } | undefined;
-          const state = ev?.activePayload?.[0]?.payload;
-          if (state) onStateSelect(state);
-        }}
-        style={{ cursor: 'pointer' }}
+    <div className="relative w-full h-full">
+      <MapGL
+        ref={mapRef}
+        initialViewState={INITIAL_VIEW}
+        mapStyle={MAP_STYLE}
+        interactiveLayerIds={['state-fill']}
+        onClick={handleClick}
+        style={{ width: '100%', height: '100%' }}
       >
-        <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-        <XAxis
-          type="number"
-          tickLine={false}
-          axisLine={false}
-          tick={{ fontSize: 11 }}
-          label={{ value: 'Gap Score (higher = more underserved)', position: 'insideBottomRight', offset: -4, fontSize: 11 }}
-        />
-        <YAxis
-          type="category"
-          dataKey="state"
-          width={116}
-          tick={{ fontSize: 11 }}
-          tickLine={false}
-          axisLine={false}
-        />
-        <Tooltip
-          formatter={(v) => [Number(v).toFixed(1), 'Gap Score']}
-          labelFormatter={(label) => `State: ${label}`}
-          content={({ active, payload }) => {
-            if (!active || !payload?.length) return null;
-            const g = payload[0].payload as StateGap;
-            return (
-              <div className="bg-card text-card-foreground border border-border rounded-lg shadow-lg p-3 text-xs space-y-1">
-                <div className="font-semibold text-sm">{g.state}</div>
-                <div>Gap score: <span className="font-medium">{g.gap_score.toFixed(1)}</span></div>
-                <div>Facilities: <span className="font-medium">{g.facility_count.toLocaleString()}</span></div>
-                <div>Demand index: <span className="font-medium">{g.demand_index?.toFixed(1) ?? 'N/A'}</span></div>
-                <div>Confidence: <span className="font-medium capitalize">{g.confidence}</span></div>
-                <div className="text-muted-foreground pt-1">Click to see details</div>
-              </div>
-            );
-          }}
-        />
-        <Bar dataKey="gap_score" radius={[0, 3, 3, 0]}>
-          {data.map((g) => (
-            <Cell key={g.state} fill={gapColor(g.gap_score)} />
-          ))}
-        </Bar>
-      </BarChart>
-    </ResponsiveContainer>
+        {enriched && (
+          <Source id="states" type="geojson" data={enriched}>
+            {/* State choropleth fill */}
+            <Layer
+              id="state-fill"
+              type="fill"
+              paint={{
+                'fill-color': [
+                  'case',
+                  ['==', ['get', 'gap_score'], null], '#e5e7eb',
+                  ['interpolate', ['linear'], ['get', 'gap_score'],
+                    0, '#86efac',
+                    10, '#fbbf24',
+                    25, '#f97316',
+                    50, '#ef4444',
+                    100, '#7f1d1d',
+                  ],
+                ],
+                'fill-opacity': [
+                  'match', ['get', 'confidence'],
+                  'high', 0.78,
+                  'medium', 0.52,
+                  0.20,
+                ],
+              }}
+            />
+            {/* State outline */}
+            <Layer
+              id="state-line"
+              type="line"
+              paint={{
+                'line-color': '#94a3b8',
+                'line-width': 0.6,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Facility heatmap layer */}
+        {showHeatmap && points.length > 0 && (
+          <Source id="heatmap" type="geojson" data={heatmapGeoJson}>
+            <Layer
+              id="facility-heat"
+              type="heatmap"
+              paint={{
+                'heatmap-weight': ['get', 'trust_weight'],
+                'heatmap-intensity': 0.6,
+                'heatmap-radius': 14,
+                'heatmap-opacity': 0.55,
+                'heatmap-color': [
+                  'interpolate', ['linear'], ['heatmap-density'],
+                  0, 'rgba(0,0,0,0)',
+                  0.2, '#ffffb2',
+                  0.5, '#fd8d3c',
+                  0.8, '#f03b20',
+                  1, '#bd0026',
+                ],
+              }}
+            />
+          </Source>
+        )}
+
+        <DesertLegend />
+      </MapGL>
+    </div>
   );
 }

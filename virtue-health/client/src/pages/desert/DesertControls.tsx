@@ -6,7 +6,7 @@ import {
   SelectValue,
   Button,
 } from '@databricks/appkit-ui/react';
-import { Layers } from 'lucide-react';
+import { Layers, Flame } from 'lucide-react';
 import type { CapabilitySummaryItem } from './types';
 
 interface DesertControlsProps {
@@ -15,6 +15,9 @@ interface DesertControlsProps {
   summary: CapabilitySummaryItem[];
   showConfidenceFilter: boolean;
   onToggleConfidenceFilter: () => void;
+  showHeatmap: boolean;
+  onToggleHeatmap: () => void;
+  heatmapLoading: boolean;
 }
 
 export function DesertControls({
@@ -23,6 +26,9 @@ export function DesertControls({
   summary,
   showConfidenceFilter,
   onToggleConfidenceFilter,
+  showHeatmap,
+  onToggleHeatmap,
+  heatmapLoading,
 }: DesertControlsProps) {
   return (
     <div className="flex flex-wrap items-center gap-3">
@@ -47,6 +53,17 @@ export function DesertControls({
           ))}
         </SelectContent>
       </Select>
+
+      <Button
+        variant={showHeatmap ? 'default' : 'outline'}
+        size="sm"
+        onClick={onToggleHeatmap}
+        disabled={heatmapLoading}
+        className="text-xs gap-1.5"
+      >
+        <Flame className="h-3.5 w-3.5" />
+        {heatmapLoading ? 'Loading…' : 'Facility heatmap'}
+      </Button>
 
       <Button
         variant={showConfidenceFilter ? 'default' : 'outline'}
