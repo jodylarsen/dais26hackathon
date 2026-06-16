@@ -16,6 +16,9 @@ function setCached(key: string, data: unknown): void {
 }
 
 const SRC = 'dais27hack.virtue_foundation_dataset_silver';
+// Analytics routes (Tracks 1 & 2) read the enriched, quality-fixed silver table.
+// Track 4 readiness-audit routes keep ${SRC}.facilities (raw) to show the pre-fix state.
+const FAC = `${SRC}.facilities_silver`;
 
 // ── Track 4: module-scope interfaces + state ──────────────────────────────
 
@@ -276,7 +279,8 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
       try {
         const [facilitiesResult, nfhsResult] = await Promise.all([
           appkit.analytics.query(
-            `SELECT COUNT(*) AS total_facilities FROM ${SRC}.facilities`,
+            // Same registry-quality guard as the list, so the KPI matches the table.
+            `SELECT COUNT(*) AS total_facilities FROM ${FAC} WHERE name IS NOT NULL AND TRIM(name) RLIKE '^[A-Za-z0-9]'`,
           ),
           appkit.analytics.query(
             `SELECT
@@ -311,9 +315,13 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
         const VALID_CAP_FLAGS = new Set(['has_icu','has_maternity','has_emergency','has_oncology','has_trauma','has_nicu']);
         const safeCapFlag = VALID_CAP_FLAGS.has(capFlag) ? capFlag : '';
 
-        const conditions: string[] = [];
+        // Registry-quality guard: name must start with a letter/digit. Drops the
+        // 54 empty ghost rows (null name) plus ~12 residual junk rows the enrichment
+        // didn't catch (specialty JSON arrays / objects dumped into the name field),
+        // which otherwise sort to the top of page 1. Applied to data + count alike.
+        const conditions: string[] = [`name IS NOT NULL AND TRIM(name) RLIKE '^[A-Za-z0-9]'`];
         if (search) conditions.push(`(name ILIKE '%${search.replace(/'/g, "''")}%' OR address_city ILIKE '%${search.replace(/'/g, "''")}%')`);
-        if (state) conditions.push(`address_stateOrRegion = '${state.replace(/'/g, "''")}'`);
+        if (state) conditions.push(`state_canonical = '${state.replace(/'/g, "''")}'`);
         if (safeCapFlag) conditions.push(`unique_id IN (SELECT unique_id FROM workspace.gold_virtue_foundation.facilities_gold WHERE ${safeCapFlag} = true)`);
         const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -322,13 +330,13 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
             `SELECT
                facility_id, name, organization_type,
                address_city, address_stateOrRegion AS state, address_country
-             FROM ${SRC}.facilities
+             FROM ${FAC}
              ${where}
              ORDER BY name ASC
              LIMIT ${pageSize} OFFSET ${offset}`,
           ),
           appkit.analytics.query(
-            `SELECT COUNT(*) AS total FROM ${SRC}.facilities ${where}`,
+            `SELECT COUNT(*) AS total FROM ${FAC} ${where}`,
           ),
         ]);
 
@@ -350,13 +358,9 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
     app.get('/api/facilities/states', async (_req, res) => {
       try {
         const result = await appkit.analytics.query(
-          `SELECT DISTINCT address_stateOrRegion AS state
-           FROM ${SRC}.facilities
-           WHERE address_stateOrRegion IS NOT NULL
-             AND address_stateOrRegion <> ''
-             AND address_stateOrRegion RLIKE '^[A-Za-z]'
-             AND address_stateOrRegion NOT LIKE '{%'
-             AND LENGTH(TRIM(address_stateOrRegion)) BETWEEN 3 AND 60
+          `SELECT DISTINCT state_canonical AS state
+           FROM ${FAC}
+           WHERE state_canonical IS NOT NULL AND state_canonical <> ''
            ORDER BY state ASC`,
         );
         res.json({ states: (result.data ?? []).map((r) => r.state as string), syncing: false });
@@ -388,7 +392,7 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
                TRY_CAST(address_country AS STRING) AS address_country,
                TRY_CAST(latitude AS STRING) AS latitude,
                TRY_CAST(longitude AS STRING) AS longitude
-             FROM ${SRC}.facilities
+             FROM ${FAC}
              WHERE facility_id = ${id}
              LIMIT 1`,
           ),
@@ -413,7 +417,7 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
                ROUND(g.ts_info, 1)              AS ts_info,
                ROUND(g.ts_staff, 1)             AS ts_staff,
                ROUND(g.trust_score_overall, 1)  AS trust_score_overall
-             FROM ${SRC}.facilities s
+             FROM ${FAC} s
              JOIN workspace.gold_virtue_foundation.facilities_gold g
                ON g.unique_id = s.unique_id
              WHERE s.facility_id = ${id}
@@ -493,8 +497,8 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
              CAST(f.longitude AS DOUBLE) AS longitude,
              LEAST(COALESCE(SIZE(SPLIT(NULLIF(TRIM(f.source_types), ''), ',')), 1) / 3.0, 1.0) AS trust_weight,
              f.capability,
-             f.address_stateOrRegion AS state
-           FROM ${SRC}.facilities f
+             f.state_canonical AS state
+           FROM ${FAC} f
            ${capJoin}
            WHERE
              f.latitude IS NOT NULL AND f.longitude IS NOT NULL
@@ -559,17 +563,17 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
 
         const dynamicStateGapsSQL = `WITH facility_state AS (
              SELECT
-               LOWER(TRIM(f.address_stateOrRegion)) AS state_key,
-               f.address_stateOrRegion AS state,
+               LOWER(TRIM(f.state_canonical)) AS state_key,
+               f.state_canonical AS state,
                COUNT(*) AS facility_count,
                AVG(
                  LEAST(COALESCE(SIZE(SPLIT(NULLIF(TRIM(f.source_types), ''), ',')), 1) / 3.0, 1.0)
                ) AS avg_trust_weight,
                COUNT(DISTINCT f.source_types) AS source_type_variants
-             FROM ${SRC}.facilities f
+             FROM ${FAC} f
              ${capJoinCTE}
-             WHERE f.address_stateOrRegion IS NOT NULL AND f.address_stateOrRegion <> ''
-             GROUP BY LOWER(TRIM(f.address_stateOrRegion)), f.address_stateOrRegion
+             WHERE f.state_canonical IS NOT NULL AND f.state_canonical <> ''
+             GROUP BY LOWER(TRIM(f.state_canonical)), f.state_canonical
            ),
            nfhs_state AS (
              SELECT
@@ -692,9 +696,9 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
              fcs.capability,
              COUNT(DISTINCT fcs.facility_id) AS facility_count,
              ROUND(AVG(fcs.confidence_score), 2) AS avg_trust_weight,
-             COUNT(DISTINCT f.address_stateOrRegion) AS state_count
+             COUNT(DISTINCT f.state_canonical) AS state_count
            FROM ${SRC}.facility_capability_scoring_table fcs
-           JOIN ${SRC}.facilities f ON fcs.facility_id = f.facility_id
+           JOIN ${FAC} f ON fcs.facility_id = f.facility_id
            GROUP BY fcs.capability
            ORDER BY facility_count DESC`,
         );

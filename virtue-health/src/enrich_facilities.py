@@ -115,7 +115,13 @@ print(f"Rows needing coordinate enrichment:     {n_null:,}")
 # model returns a JSON correction map that is joined back and applied.
 
 # 2a. Discover best available foundation-model endpoint
-from mlflow.deployments import get_deploy_client
+#
+# We use requests.post() directly rather than mlflow.deployments.get_deploy_client()
+# because the MLflow client wraps a requests.Session that is not safe for concurrent
+# use across threads.  A plain requests.post() opens its own connection per call and
+# is unambiguously thread-safe.
+
+import requests as _requests
 
 _LLM_CANDIDATES = [
     "databricks-meta-llama-3-3-70b-instruct",
@@ -124,15 +130,29 @@ _LLM_CANDIDATES = [
     "databricks-mixtral-8x7b-instruct",
 ]
 
-_deploy_client = get_deploy_client("databricks")
-LLM_ENDPOINT   = None
+# Capture auth token and workspace URL in main thread before spawning workers.
+# dbutils / spark context are not reliably accessible inside ThreadPoolExecutor threads.
+try:
+    _LLM_TOKEN = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().get()
+except Exception:
+    _LLM_TOKEN = None
 
+_LLM_WORKSPACE = spark.conf.get("spark.databricks.workspaceUrl", "")
+_LLM_HEADERS   = {
+    "Authorization": f"Bearer {_LLM_TOKEN}",
+    "Content-Type":  "application/json",
+}
+
+def _llm_post(endpoint, payload, timeout=30):
+    url  = f"https://{_LLM_WORKSPACE}/serving-endpoints/{endpoint}/invocations"
+    resp = _requests.post(url, headers=_LLM_HEADERS, json=payload, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json()
+
+LLM_ENDPOINT = None
 for _ep in _LLM_CANDIDATES:
     try:
-        _deploy_client.predict(
-            endpoint=_ep,
-            inputs={"messages": [{"role": "user", "content": "ping"}], "max_tokens": 3},
-        )
+        _llm_post(_ep, {"messages": [{"role": "user", "content": "ping"}], "max_tokens": 3})
         LLM_ENDPOINT = _ep
         print(f"LLM endpoint: {LLM_ENDPOINT}")
         break
@@ -145,7 +165,7 @@ if not LLM_ENDPOINT:
 # COMMAND ----------
 
 # 2b. Detect suspicious rows (lightweight regex heuristics)
-LLM_CAP      = 5_000   # max suspicious rows to send to LLM
+LLM_CAP      = 1_000   # max suspicious rows to send to LLM (~3 min at 10 workers)
 LLM_WORKERS  = 10      # concurrent calls
 
 PHONE_PAT  = r"(\+91|\b0\d{9,10}\b|\b\d{3}[-.\s]\d{3}[-.\s]\d{4}\b)"
@@ -214,20 +234,22 @@ def _parse_json(text):
     return {}
 
 def _call_llm(row, retries=2):
-    """Call LLM for one suspicious row. Returns (row_id, {col: corrected_val})."""
+    """Call LLM for one suspicious row. Returns (row_id, {col: corrected_val}).
+
+    Uses requests.post() directly rather than a shared mlflow deployment client
+    so each thread opens its own connection (thread-safe by construction).
+    """
     row_dict = row.asDict()
     prompt   = _build_prompt(row_dict)
+    payload  = {
+        "messages":    [{"role": "user", "content": prompt}],
+        "max_tokens":  256,
+        "temperature": 0.0,
+    }
     for attempt in range(retries + 1):
         try:
-            resp = _deploy_client.predict(
-                endpoint=LLM_ENDPOINT,
-                inputs={
-                    "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": 256,
-                    "temperature": 0.0,
-                },
-            )
-            text = resp["choices"][0]["message"]["content"]
+            data = _llm_post(LLM_ENDPOINT, payload)
+            text = data["choices"][0]["message"]["content"]
             obj  = _parse_json(text)
             fixes = {
                 k: (None if v in (None, "null", "NULL", "") else str(v))
@@ -235,11 +257,9 @@ def _call_llm(row, retries=2):
                 if k in CORRECTABLE_COLS
             }
             return (row_dict["_row_id"], fixes)
-        except Exception as e:
+        except Exception:
             if attempt < retries:
                 time.sleep(2 ** attempt)
-            else:
-                return (row_dict["_row_id"], {})
     return (row_dict["_row_id"], {})
 
 # COMMAND ----------

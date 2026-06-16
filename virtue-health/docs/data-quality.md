@@ -99,11 +99,11 @@ The notebook auto-discovers the best available Databricks Foundation Model endpo
 3. `databricks-dbrx-instruct`
 4. `databricks-mixtral-8x7b-instruct`
 
-Called via `mlflow.deployments.get_deploy_client("databricks")` — uses workspace authentication automatically. If no endpoint is reachable, the LLM pass is **skipped gracefully** (the notebook continues and logs a warning; other phases still run).
+Calls are made via `requests.post()` directly against the workspace serving-endpoint URL, using the notebook's API token captured in the main thread before any workers are spawned. This avoids the shared `requests.Session` inside the MLflow deployment client, which is not safe for concurrent use across threads. If no endpoint is reachable, the LLM pass is **skipped gracefully** (the notebook continues and logs a warning; other phases still run).
 
 ### 2.4 Parallel LLM calls
 
-Each suspicious row is sent as an independent prompt to the LLM using a **10-thread `ThreadPoolExecutor`**, yielding ~10× throughput versus sequential calls. Each call includes:
+Each suspicious row is sent as an independent prompt to the LLM using a **10-thread `ThreadPoolExecutor`**, yielding ~10× throughput versus sequential calls. Up to **1,000 suspicious rows** are sampled (`LLM_CAP` constant) — roughly 3 minutes wall-clock at 10 workers × ~2s/call. Each call includes:
 
 - The row's key column values as JSON
 - Column definitions (expected content per column)
@@ -234,7 +234,7 @@ Result stored in **`state_canonical`** (new column). Existing `address_stateorre
 | Issue | Status | Notes |
 |-------|--------|-------|
 | Duplicate `unique_id` | **NOT FIXED** — upstream defect | Requires source-side deduplication; tracked in `data-pipeline.md` |
-| LLM column-alignment coverage | **PARTIAL** — up to 5,000 rows | `LLM_CAP` in notebook; raise for full coverage (costs more) |
+| LLM column-alignment coverage | **PARTIAL** — up to 1,000 rows | `LLM_CAP` in notebook; raise for full coverage (costs more, ~3 min at default) |
 | Fuzzy name matching for coordinates | **NOT DONE** | Exact name match only; typos or abbreviations in `name` will miss Wikidata/OSM/Overture lookups |
 | `address_district` NULL rate | **DEPENDS ON PINCODE COVERAGE** | Only populated when a 6-digit pincode is detectable in `address_city`; many facilities have no pincode in address |
 | State mismatch in NFHS join | **PARTIALLY FIXED** via `state_canonical` | Downstream analytics must join on `state_canonical`, not `address_stateorregion` |
