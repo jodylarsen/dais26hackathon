@@ -65,11 +65,12 @@ function Layout() {
         className="border-b px-4 md:px-6 py-3 flex items-center gap-4"
         style={{ backgroundColor: '#0B2026' }}
       >
-        <div className="flex items-center gap-2">
-          <div className="h-7 w-7 rounded-md bg-[#FF3621] flex items-center justify-center">
+        <div className="flex items-center gap-2.5">
+          <div className="h-7 w-7 rounded-md bg-[#FF3621] flex items-center justify-center shrink-0">
             <Activity className="h-4 w-4 text-white" />
           </div>
-          <h1 className="text-base font-semibold text-white">Virtue Health</h1>
+          <h1 className="text-base font-semibold text-white tracking-tight">Virtue Health</h1>
+          <span className="text-[10px] font-semibold bg-white/15 text-white/70 px-1.5 py-0.5 rounded tracking-wide hidden sm:inline">DAIS 2026</span>
         </div>
 
         {/* Desktop nav */}
@@ -143,7 +144,7 @@ function Layout() {
         </div>
       </header>
 
-      <main className="flex-1 p-4 md:p-6 bg-[#F9F7F4]">
+      <main className="flex-1 p-4 md:p-6 bg-background">
         <Outlet />
       </main>
     </div>
@@ -154,7 +155,7 @@ function RouteErrorPage() {
   const error = useRouteError();
   const message = error instanceof Error ? error.message : String(error ?? 'Unknown error');
   return (
-    <div className="min-h-screen bg-[#F9F7F4]">
+    <div className="min-h-screen bg-background">
       <ErrorDisplay message={message} onRetry={() => window.location.reload()} />
     </div>
   );

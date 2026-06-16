@@ -8,22 +8,24 @@ interface KpiCardProps {
   description: string;
   icon: React.ReactNode;
   loading: boolean;
+  accent: string;
 }
 
-function KpiCard({ title, value, description, icon, loading }: KpiCardProps) {
+function KpiCard({ title, value, description, icon, loading, accent }: KpiCardProps) {
   return (
-    <Card className="shadow-sm border border-border/60">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+    <Card className="shadow-sm border border-border/60 overflow-hidden">
+      <div className="h-[3px]" style={{ background: `linear-gradient(90deg, ${accent}, ${accent}55)` }} />
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-3">
         <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-        <div className="h-8 w-8 rounded-md bg-[#FF3621]/10 flex items-center justify-center text-[#FF3621]">
+        <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${accent}18`, color: accent }}>
           {icon}
         </div>
       </CardHeader>
       <CardContent>
         {loading ? (
-          <Skeleton className="h-8 w-24 mt-1" />
+          <Skeleton className="h-9 w-24 mt-1" />
         ) : (
-          <div className="text-3xl font-bold text-foreground">{value}</div>
+          <div className="text-3xl font-bold text-foreground tabular-nums">{value}</div>
         )}
         <p className="text-xs text-muted-foreground mt-1">{description}</p>
       </CardContent>
@@ -53,6 +55,7 @@ export function DesertKpiBar({ gaps, loading }: DesertKpiBarProps) {
         description="States with gap score > 50"
         icon={<AlertTriangle className="h-4 w-4" />}
         loading={loading}
+        accent="#ef4444"
       />
       <KpiCard
         title="High Demand"
@@ -60,6 +63,7 @@ export function DesertKpiBar({ gaps, loading }: DesertKpiBarProps) {
         description="States with demand index > 60"
         icon={<TrendingUp className="h-4 w-4" />}
         loading={loading}
+        accent="#f59e0b"
       />
       <KpiCard
         title="No Facilities"
@@ -67,6 +71,7 @@ export function DesertKpiBar({ gaps, loading }: DesertKpiBarProps) {
         description="States with zero facilities indexed"
         icon={<Building2 className="h-4 w-4" />}
         loading={loading}
+        accent="#6366f1"
       />
       <KpiCard
         title="Avg Gap Score"
@@ -74,6 +79,7 @@ export function DesertKpiBar({ gaps, loading }: DesertKpiBarProps) {
         description="National average care gap"
         icon={<ShieldAlert className="h-4 w-4" />}
         loading={loading}
+        accent="#0ea5e9"
       />
     </div>
   );

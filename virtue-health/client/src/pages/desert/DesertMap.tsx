@@ -84,7 +84,7 @@ export function DesertMap({
             if (!active || !payload?.length) return null;
             const g = payload[0].payload as StateGap;
             return (
-              <div className="bg-white border border-border rounded-lg shadow-lg p-3 text-xs space-y-1">
+              <div className="bg-card text-card-foreground border border-border rounded-lg shadow-lg p-3 text-xs space-y-1">
                 <div className="font-semibold text-sm">{g.state}</div>
                 <div>Gap score: <span className="font-medium">{g.gap_score.toFixed(1)}</span></div>
                 <div>Facilities: <span className="font-medium">{g.facility_count.toLocaleString()}</span></div>

@@ -150,7 +150,7 @@ export function DistrictsPage() {
       )}
 
       {isSyncing && !error && (
-        <div className="flex items-center gap-2 text-amber-700 bg-amber-50 border border-amber-200 px-4 py-3 rounded-lg">
+        <div className="flex items-center gap-2 px-4 py-3 rounded-lg border bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-950/40 dark:border-amber-800/50 dark:text-amber-300">
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span className="text-sm">
             NFHS data is being synced. District indicators will appear once the sync completes.

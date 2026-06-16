@@ -1,5 +1,18 @@
 @import "@databricks/appkit-ui/styles.css";
 
+*, *::before, *::after {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
 :root {
   /* --radius: 0.625rem;
   --background: oklch(1 0 0);

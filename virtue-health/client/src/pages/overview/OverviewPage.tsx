@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, Skeleton } from '@databricks/appkit-ui/react';
-import { Building2, MapPin, Map, Users, AlertCircle } from 'lucide-react';
+import { Building2, MapPin, Map, Users, AlertCircle, Database, BarChart3, Activity } from 'lucide-react';
 
 interface SummaryData {
   totalFacilities: number;
@@ -16,22 +16,24 @@ interface KpiCardProps {
   description: string;
   icon: React.ReactNode;
   loading: boolean;
+  accent?: string;
 }
 
-function KpiCard({ title, value, description, icon, loading }: KpiCardProps) {
+function KpiCard({ title, value, description, icon, loading, accent = '#FF3621' }: KpiCardProps) {
   return (
-    <Card className="shadow-sm border border-border/60">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+    <Card className="shadow-sm border border-border/60 overflow-hidden">
+      <div className="h-[3px]" style={{ background: `linear-gradient(90deg, ${accent}, ${accent}55)` }} />
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-3">
         <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-        <div className="h-8 w-8 rounded-md bg-[#FF3621]/10 flex items-center justify-center text-[#FF3621]">
+        <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${accent}15`, color: accent }}>
           {icon}
         </div>
       </CardHeader>
       <CardContent>
         {loading ? (
-          <Skeleton className="h-8 w-24 mt-1" />
+          <Skeleton className="h-9 w-24 mt-1" />
         ) : (
-          <div className="text-3xl font-bold text-foreground">{value}</div>
+          <div className="text-3xl font-bold text-foreground tabular-nums">{value}</div>
         )}
         <p className="text-xs text-muted-foreground mt-1">{description}</p>
       </CardContent>
@@ -55,14 +57,17 @@ export function OverviewPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const isSyncing = summary?.syncing === true;
-
   return (
     <div className="space-y-8 max-w-5xl">
-      <div>
-        <h2 className="text-2xl font-bold text-foreground">India Healthcare Overview</h2>
-        <p className="text-muted-foreground mt-1">
-          Summary of healthcare facilities and district health indicators across India.
+      {/* Hero */}
+      <div className="rounded-xl bg-gradient-to-br from-[#0B2026] to-[#1a3a44] p-6 text-white">
+        <div className="flex items-center gap-2 mb-3">
+          <Activity className="h-5 w-5 text-[#FF3621]" />
+          <span className="text-sm font-medium text-white/70 uppercase tracking-widest">India Healthcare</span>
+        </div>
+        <h2 className="text-2xl font-bold tracking-tight">Healthcare at a Glance</h2>
+        <p className="text-white/75 mt-1 text-sm max-w-xl">
+          Facility registry and NFHS-5 district health indicators across all states and union territories.
         </p>
       </div>
 
@@ -73,15 +78,6 @@ export function OverviewPage() {
         </div>
       )}
 
-      {isSyncing && !error && (
-        <div className="flex items-center gap-2 text-amber-700 bg-amber-50 border border-amber-200 px-4 py-3 rounded-lg">
-          <AlertCircle className="h-4 w-4 shrink-0" />
-          <span className="text-sm">
-            Data syncing… KPIs will appear once the sync is complete.
-          </span>
-        </div>
-      )}
-
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
           title="Total Facilities"
@@ -89,6 +85,7 @@ export function OverviewPage() {
           description="Healthcare facilities indexed"
           icon={<Building2 className="h-4 w-4" />}
           loading={loading}
+          accent="#FF3621"
         />
         <KpiCard
           title="States Covered"
@@ -96,6 +93,7 @@ export function OverviewPage() {
           description="States and union territories"
           icon={<Map className="h-4 w-4" />}
           loading={loading}
+          accent="#0ea5e9"
         />
         <KpiCard
           title="Districts Covered"
@@ -103,45 +101,64 @@ export function OverviewPage() {
           description="From NFHS-5 health indicators"
           icon={<MapPin className="h-4 w-4" />}
           loading={loading}
+          accent="#8b5cf6"
         />
         <KpiCard
           title="Avg Sex Ratio"
-          value={
-            summary?.avgSexRatio != null
-              ? `${summary.avgSexRatio.toLocaleString()}`
-              : '—'
-          }
+          value={summary?.avgSexRatio != null ? summary.avgSexRatio.toLocaleString() : '—'}
           description="Females per 1,000 males"
           icon={<Users className="h-4 w-4" />}
           loading={loading}
+          accent="#10b981"
         />
       </div>
 
-      <Card className="shadow-sm border border-border/60">
-        <CardHeader>
-          <CardTitle className="text-base">About This App</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm text-muted-foreground">
-          <p>
-            <span className="font-medium text-foreground">Virtue Health</span> is an India
-            healthcare data explorer built for DAIS 2026 on Databricks. It combines facility
-            registry data with the National Family Health Survey (NFHS-5) district indicators.
-          </p>
-          <ul className="space-y-1 list-disc list-inside">
-            <li>
-              <span className="font-medium text-foreground">Facilities</span> — searchable registry
-              of healthcare facilities across India, synced from Unity Catalog via Lakebase
-            </li>
-            <li>
-              <span className="font-medium text-foreground">Districts</span> — NFHS-5 district
-              health indicators: electricity, water, sanitation, and civil registration coverage
-            </li>
-          </ul>
-          <p className="text-xs">
-            Data powered by Databricks Lakebase (PostgreSQL) with Synced Tables from Unity Catalog.
-          </p>
-        </CardContent>
-      </Card>
+      {/* Data sources */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {[
+          {
+            icon: <Building2 className="h-5 w-5" />,
+            title: 'Facilities',
+            color: '#FF3621',
+            desc: 'Searchable registry of healthcare facilities across India. Filter by state or search by name and city.',
+          },
+          {
+            icon: <MapPin className="h-5 w-5" />,
+            title: 'Districts',
+            color: '#8b5cf6',
+            desc: 'NFHS-5 district health indicators: electricity, improved water, sanitation, and civil birth registration.',
+          },
+          {
+            icon: <BarChart3 className="h-5 w-5" />,
+            title: 'Desert Planner',
+            color: '#f97316',
+            desc: 'Identifies highest-risk care gaps by comparing state facility supply against NFHS-5 demand indices.',
+          },
+        ].map(({ icon, title, color, desc }) => (
+          <Card key={title} className="shadow-sm border border-border/60 overflow-hidden">
+            <div className="h-[3px]" style={{ background: `linear-gradient(90deg, ${color}, ${color}55)` }} />
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${color}15`, color }}>
+                  {icon}
+                </div>
+                <span className="font-semibold text-foreground text-sm">{title}</span>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">{desc}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Data source note */}
+      <div className="flex items-center gap-2 text-xs text-muted-foreground border border-border/40 rounded-lg px-4 py-3 bg-muted/20">
+        <Database className="h-3.5 w-3.5 shrink-0 text-[#FF3621]" />
+        <span>
+          Powered by <span className="font-medium text-foreground">Databricks SQL Warehouse</span> querying{' '}
+          <code className="bg-muted px-1 py-0.5 rounded text-[10px]">dais27hack.virtue_foundation_dataset_silver</code>{' '}
+          in Unity Catalog — live data, no caching on overview metrics.
+        </span>
+      </div>
     </div>
   );
 }

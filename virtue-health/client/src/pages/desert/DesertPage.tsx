@@ -8,6 +8,14 @@ import { DesertDetailPanel } from './DesertDetailPanel';
 import { useStateGaps, useCapabilitySummary } from './useDesertData';
 import type { StateGap } from './types';
 
+const GAP_LEGEND = [
+  { label: '< 10', desc: 'Low', color: '#86efac' },
+  { label: '10–25', desc: 'Moderate', color: '#fbbf24' },
+  { label: '25–50', desc: 'High', color: '#f97316' },
+  { label: '50–100', desc: 'Severe', color: '#ef4444' },
+  { label: '100+', desc: 'Critical', color: '#7f1d1d' },
+];
+
 export function DesertPage() {
   const [capabilityFilter, setCapabilityFilter] = useState('');
   const [showConfidenceFilter, setShowConfidenceFilter] = useState(false);
@@ -41,20 +49,20 @@ export function DesertPage() {
       )}
 
       {isSyncing && !gapsError && (
-        <div className="flex items-center gap-2 text-amber-700 bg-amber-50 border border-amber-200 px-4 py-3 rounded-lg">
+        <div className="flex items-center gap-2 px-4 py-3 rounded-lg border bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-950/40 dark:border-amber-800/50 dark:text-amber-300">
           <AlertCircle className="h-4 w-4 shrink-0" />
-          <span className="text-sm">Data syncing… map will appear once the sync is complete.</span>
+          <span className="text-sm">Data syncing… chart will appear once the sync is complete.</span>
         </div>
       )}
 
       <DesertKpiBar gaps={gaps} loading={gapsLoading} />
 
       {/* Data limitation disclosure */}
-      <div className="flex gap-2 text-xs text-muted-foreground bg-blue-50 border border-blue-100 rounded-md px-3 py-2">
-        <Info className="h-4 w-4 shrink-0 mt-0.5 text-blue-500" />
+      <div className="flex gap-2 text-xs rounded-md px-3 py-2 border bg-blue-50 border-blue-100 text-blue-800 dark:bg-blue-950/30 dark:border-blue-800/40 dark:text-blue-300">
+        <Info className="h-4 w-4 shrink-0 mt-0.5 text-blue-500 dark:text-blue-400" />
         <span>
           Facility counts are aggregated at the state level. Gap scores reflect state-wide
-          supply vs. demand and do not resolve within-state distribution. Click any state
+          supply vs. demand and do not resolve within-state distribution. Click any bar
           for details.
         </span>
       </div>
@@ -67,9 +75,22 @@ export function DesertPage() {
         onToggleConfidenceFilter={() => setShowConfidenceFilter((v) => !v)}
       />
 
+      {/* Gap score legend */}
+      <div className="flex items-center gap-1 flex-wrap">
+        <span className="text-xs text-muted-foreground mr-1">Gap score:</span>
+        {GAP_LEGEND.map(({ label, desc, color }) => (
+          <div key={label} className="flex items-center gap-1 text-xs">
+            <div className="w-3 h-3 rounded-sm shrink-0" style={{ background: color }} />
+            <span className="text-muted-foreground">{label}</span>
+            <span className="font-medium text-foreground">{desc}</span>
+            {label !== '100+' && <span className="text-border mx-0.5">·</span>}
+          </div>
+        ))}
+      </div>
+
       {/* Gap score bar chart */}
-      <div className="relative rounded-lg border border-border/60 shadow-sm overflow-hidden bg-white"
-           style={{ height: 'calc(100vh - 380px)', minHeight: '400px' }}>
+      <div className="relative rounded-lg border border-border/60 shadow-sm overflow-hidden bg-card"
+           style={{ height: 'calc(100vh - 430px)', minHeight: '400px' }}>
         {gapsLoading ? (
           <Skeleton className="w-full h-full rounded-none" />
         ) : (
