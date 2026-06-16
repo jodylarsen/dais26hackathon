@@ -14,6 +14,7 @@ import { OverviewPage } from './pages/overview/OverviewPage';
 import { FacilitiesPage } from './pages/facilities/FacilitiesPage';
 import { DistrictsPage } from './pages/districts/DistrictsPage';
 import { DesertPage } from './pages/desert/DesertPage';
+import { DataReadinessPage } from './pages/data-readiness/DataReadinessPage';
 
 const mobileNavLinkClass = ({ isActive }: { isActive: boolean }) =>
   `block px-3 py-2 rounded-md text-sm font-medium transition-colors ${
@@ -46,6 +47,9 @@ function NavLinks({
       </NavLink>
       <NavLink to="/desert" className={linkClass} onClick={onClick}>
         Desert Planner
+      </NavLink>
+      <NavLink to="/data-readiness" className={linkClass} onClick={onClick}>
+        Data Readiness
       </NavLink>
     </nav>
   );
@@ -116,6 +120,16 @@ function Layout() {
           >
             Desert Planner
           </NavLink>
+          <NavLink
+            to="/data-readiness"
+            className={({ isActive }) =>
+              `px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                isActive ? 'bg-white/15 text-white' : 'text-white/70 hover:bg-white/10 hover:text-white'
+              }`
+            }
+          >
+            Data Readiness
+          </NavLink>
         </div>
 
         {/* Mobile nav */}
@@ -170,6 +184,7 @@ const router = createBrowserRouter([
       { path: '/facilities', element: <FacilitiesPage />, errorElement: <RouteErrorPage /> },
       { path: '/districts', element: <DistrictsPage />, errorElement: <RouteErrorPage /> },
       { path: '/desert', element: <DesertPage />, errorElement: <RouteErrorPage /> },
+      { path: '/data-readiness', element: <DataReadinessPage />, errorElement: <RouteErrorPage /> },
     ],
   },
 ]);

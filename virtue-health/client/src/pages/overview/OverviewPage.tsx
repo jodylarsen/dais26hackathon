@@ -134,6 +134,12 @@ export function OverviewPage() {
             color: '#f97316',
             desc: 'Identifies highest-risk care gaps by comparing state facility supply against NFHS-5 demand indices.',
           },
+          {
+            icon: <Database className="h-5 w-5" />,
+            title: 'Data Readiness',
+            color: '#6366f1',
+            desc: 'Live data quality scores for the facilities table plus a prioritized enrichment roadmap across 10 free India datasets.',
+          },
         ].map(({ icon, title, color, desc }) => (
           <Card key={title} className="shadow-sm border border-border/60 overflow-hidden">
             <div className="h-[3px]" style={{ background: `linear-gradient(90deg, ${color}, ${color}55)` }} />
