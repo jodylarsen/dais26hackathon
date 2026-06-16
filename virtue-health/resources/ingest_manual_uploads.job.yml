@@ -1,0 +1,25 @@
+resources:
+  jobs:
+    ingest_manual_uploads:
+      name: "[virtue-health] Ingest Manual Upload Sources (CGHS / AERB / HMIS)"
+      description: >
+        Run manually after uploading files to the enrichment_uploads volume.
+        All three tasks run in parallel; individual tasks can also be re-run independently.
+      tasks:
+        - task_key: ingest_cghs
+          notebook_task:
+            notebook_path: ../src/ingest_cghs.py
+          # no cluster config = serverless
+
+        - task_key: ingest_aerb
+          notebook_task:
+            notebook_path: ../src/ingest_aerb.py
+
+        - task_key: ingest_hmis
+          notebook_task:
+            notebook_path: ../src/ingest_hmis.py
+
+      # No schedule — trigger manually after file upload
+      tags:
+        track: enrichment
+        source: manual_uploads

@@ -1,0 +1,11 @@
+resources:
+  volumes:
+    enrichment_uploads:
+      catalog_name: dais27hack
+      schema_name: virtue_foundation_dataset_silver
+      name: enrichment_uploads
+      volume_type: MANAGED
+      comment: >
+        Landing zone for manual enrichment file uploads (CGHS, AERB, HMIS).
+        Upload files here before triggering the ingest_manual_uploads job.
+        Path: /Volumes/dais27hack/virtue_foundation_dataset_silver/enrichment_uploads/

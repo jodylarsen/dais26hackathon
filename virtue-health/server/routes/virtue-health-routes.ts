@@ -1,4 +1,6 @@
 import { Application } from 'express';
+import { createReadStream, existsSync } from 'node:fs';
+import path from 'node:path';
 
 const DESERT_CACHE_TTL_MS = 5 * 60 * 1000;
 const desertCache = new Map<string, { data: unknown; expiresAt: number }>();
@@ -13,8 +15,7 @@ function setCached(key: string, data: unknown): void {
   desertCache.set(key, { data, expiresAt: Date.now() + DESERT_CACHE_TTL_MS });
 }
 
-const SRC  = 'dais27hack.virtue_foundation_dataset_silver';
-const GOLD = 'workspace.gold_virtue_foundation_dataset';
+const SRC = 'dais27hack.virtue_foundation_dataset_silver';
 
 // ── Track 4: module-scope interfaces + state ──────────────────────────────
 
@@ -76,7 +77,6 @@ const TIEBREAK = `ORDER BY name ASC, facility_id ASC`;
 
 // ── Field definitions — 16 entries (AC1: ≥15 columns) ──
 // Remove any entry absent from DESCRIBE before running; keep ≥15 for AC1.
-// capability_status: confirm via PF-1/PF-3; remove if absent.
 const FIELD_DEFS = [
   { col: 'name',                  label: 'Name',               critical: true,  isNumeric: false },
   { col: 'description',           label: 'Description',        critical: false, isNumeric: false },
@@ -93,7 +93,6 @@ const FIELD_DEFS = [
   { col: 'address_country',       label: 'Country',            critical: false, isNumeric: false },
   { col: 'organization_type',     label: 'Organization Type',  critical: false, isNumeric: false },
   { col: 'facility_id',           label: 'Facility ID',        critical: true,  isNumeric: true  },
-  { col: 'capability_status',     label: 'Capability Status',  critical: false, isNumeric: false },
 ] as const;
 
 // ── Issue detection list queries (LIMIT 200, deterministic TIEBREAK) ──
@@ -261,6 +260,18 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
   }
 
   appkit.server.extend((app) => {
+    // Serve pre-gzipped geojson in production; dev falls through to Vite's public dir.
+    app.get('/india-states.geojson', (_req, res, next) => {
+      const gz = path.join(process.cwd(), 'client/dist/india-states.geojson.gz');
+      if (!existsSync(gz)) return next();
+      res.set({
+        'Content-Type': 'application/geo+json',
+        'Content-Encoding': 'gzip',
+        'Cache-Control': 'public, max-age=86400',
+      });
+      createReadStream(gz).pipe(res);
+    });
+
     app.get('/api/summary', async (_req, res) => {
       try {
         const [facilitiesResult, nfhsResult] = await Promise.all([
@@ -292,13 +303,18 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
       try {
         const search = (req.query.search as string | undefined) ?? '';
         const state = (req.query.state as string | undefined) ?? '';
+        const capFlag = (req.query.capFlag as string | undefined) ?? '';
         const page = Math.max(1, parseInt((req.query.page as string | undefined) ?? '1', 10));
         const pageSize = 50;
         const offset = (page - 1) * pageSize;
 
+        const VALID_CAP_FLAGS = new Set(['has_icu','has_maternity','has_emergency','has_oncology','has_trauma','has_nicu']);
+        const safeCapFlag = VALID_CAP_FLAGS.has(capFlag) ? capFlag : '';
+
         const conditions: string[] = [];
         if (search) conditions.push(`(name ILIKE '%${search.replace(/'/g, "''")}%' OR address_city ILIKE '%${search.replace(/'/g, "''")}%')`);
         if (state) conditions.push(`address_stateOrRegion = '${state.replace(/'/g, "''")}'`);
+        if (safeCapFlag) conditions.push(`unique_id IN (SELECT unique_id FROM workspace.gold_virtue_foundation.facilities_gold WHERE ${safeCapFlag} = true)`);
         const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
         const [dataResult, countResult] = await Promise.all([
@@ -354,7 +370,7 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
       try {
         const id = parseInt(req.params.id, 10);
         if (isNaN(id)) { res.status(400).json({ error: 'Invalid facility ID' }); return; }
-        const [result, trustResult] = await Promise.all([
+        const [result, trustResult, signalResult] = await Promise.all([
           appkit.analytics.query(
             `SELECT
                CAST(facility_id AS INT) AS facility_id,
@@ -362,7 +378,6 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
                TRY_CAST(description AS STRING) AS description,
                TRY_CAST(organization_type AS STRING) AS organization_type,
                TRY_CAST(capability AS STRING) AS capability,
-               TRY_CAST(capability_status AS STRING) AS capability_status,
                TRY_CAST(specialties AS STRING) AS specialties,
                TRY_CAST(equipment AS STRING) AS equipment,
                TRY_CAST(procedure AS STRING) AS procedure,
@@ -380,19 +395,40 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
           appkit.analytics.query(
             `SELECT
                capability,
-               ROUND(trust_score, 1) AS trust_score,
-               trust_level,
-               ROUND(data_completeness_score, 2) AS data_completeness_score,
-               ROUND(digital_footprint_score, 2) AS digital_footprint_score,
-               source_count
-             FROM ${GOLD}.facility_trust_scores
-             WHERE CAST(facility_id AS STRING) = CAST(${id} AS STRING)
-             ORDER BY trust_score DESC`,
+               ROUND(confidence_score / 10.0, 1) AS trust_score,
+               confidence_rating AS trust_level,
+               ROUND(data_quality_score, 2) AS data_completeness_score,
+               ROUND(capability_evidence_score, 2) AS digital_footprint_score
+             FROM ${SRC}.facility_capability_scoring_table
+             WHERE facility_id = ${id}
+             ORDER BY confidence_score DESC`,
+          ).catch((): { data: Record<string, unknown>[] } => ({ data: [] })),
+          appkit.analytics.query(
+            `SELECT
+               ROUND(g.ts_branding, 1)         AS ts_branding,
+               ROUND(g.ts_social, 1)            AS ts_social,
+               ROUND(g.ts_activity, 1)          AS ts_activity,
+               ROUND(g.ts_engagement, 1)        AS ts_engagement,
+               ROUND(g.ts_estab, 1)             AS ts_estab,
+               ROUND(g.ts_info, 1)              AS ts_info,
+               ROUND(g.ts_staff, 1)             AS ts_staff,
+               ROUND(g.trust_score_overall, 1)  AS trust_score_overall
+             FROM ${SRC}.facilities s
+             JOIN workspace.gold_virtue_foundation.facilities_gold g
+               ON g.unique_id = s.unique_id
+             WHERE s.facility_id = ${id}
+             LIMIT 1`,
           ).catch((): { data: Record<string, unknown>[] } => ({ data: [] })),
         ]);
         const row = result.data?.[0];
         if (!row) { res.status(404).json({ error: 'Facility not found' }); return; }
-        res.json({ facility: { ...row, trust_scores: trustResult.data ?? [] } });
+        res.json({
+          facility: {
+            ...row,
+            trust_scores: trustResult.data ?? [],
+            gold_trust_signals: signalResult.data?.[0] ?? null,
+          },
+        });
       } catch (err) {
         console.error('[facilities/:id] Query failed:', err);
         res.status(500).json({ error: 'Failed to load facility' });
@@ -446,11 +482,8 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
         const cached = getCached<unknown[]>(cacheKey);
         if (cached) { res.json({ points: cached, syncing: false }); return; }
 
-        const capClause = capability
-          ? `AND f.capability ILIKE '%${capability.replace(/'/g, "''")}%'`
-          : '';
-        const capFtsWhere = capability
-          ? `WHERE capability ILIKE '%${capability.replace(/'/g, "''")}%'`
+        const capJoin = capability
+          ? `JOIN ${SRC}.facility_capability_scoring_table fcs ON f.facility_id = fcs.facility_id AND fcs.capability = '${capability.replace(/'/g, "''")}'`
           : '';
 
         const result = await appkit.analytics.query(
@@ -458,24 +491,15 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
              f.facility_id,
              CAST(f.latitude AS DOUBLE)  AS latitude,
              CAST(f.longitude AS DOUBLE) AS longitude,
-             COALESCE(
-               fts.trust_score / 10.0,
-               LEAST(COALESCE(SIZE(SPLIT(NULLIF(TRIM(f.source_types), ''), ',')), 1) / 3.0, 1.0)
-             ) AS trust_weight,
+             LEAST(COALESCE(SIZE(SPLIT(NULLIF(TRIM(f.source_types), ''), ',')), 1) / 3.0, 1.0) AS trust_weight,
              f.capability,
              f.address_stateOrRegion AS state
            FROM ${SRC}.facilities f
-           LEFT JOIN (
-             SELECT facility_id, MAX(trust_score) AS trust_score
-             FROM ${GOLD}.facility_trust_scores
-             ${capFtsWhere}
-             GROUP BY facility_id
-           ) fts ON CAST(f.facility_id AS STRING) = fts.facility_id
+           ${capJoin}
            WHERE
              f.latitude IS NOT NULL AND f.longitude IS NOT NULL
              AND CAST(f.latitude AS DOUBLE) BETWEEN 6.0 AND 37.5
-             AND CAST(f.longitude AS DOUBLE) BETWEEN 68.0 AND 97.5
-             ${capClause}`,
+             AND CAST(f.longitude AS DOUBLE) BETWEEN 68.0 AND 97.5`,
         );
 
         setCached(cacheKey, result.data ?? []);
@@ -493,34 +517,58 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
         const cached = getCached<unknown[]>(cacheKey);
         if (cached) { res.json({ gaps: cached, syncing: false }); return; }
 
-        const capClause2 = capability
-          ? `AND f.capability ILIKE '%${capability.replace(/'/g, "''")}%'`
-          : '';
-        const capFtsWhere2 = capability
-          ? `WHERE capability ILIKE '%${capability.replace(/'/g, "''")}%'`
+        // No capability filter → use pre-computed gold district_health_context (faster, richer).
+        // Capability filter → dynamic CTE that joins the scoring table.
+        const goldStateGapsSQL = `
+          WITH dc AS (
+            SELECT
+              dhc.state,
+              SUM(dhc.facility_count_total)                          AS facility_count,
+              ROUND(AVG(dhc.avg_trust_score / 10.0), 3)             AS avg_trust_weight,
+              COUNT(DISTINCT dhc.district)                           AS district_count,
+              ROUND(AVG(n.hh_electricity_pct), 1)                   AS avg_electricity,
+              ROUND(AVG(n.hh_improved_water_pct), 1)                AS avg_water,
+              ROUND(AVG(n.hh_use_improved_sanitation_pct), 1)       AS avg_sanitation,
+              ROUND(AVG(n.child_u5_whose_birth_was_civil_reg_pct), 1) AS avg_birth_reg,
+              ROUND((
+                (100.0 - COALESCE(AVG(n.hh_electricity_pct), 50))
+                + (100.0 - COALESCE(AVG(n.hh_improved_water_pct), 50))
+                + (100.0 - COALESCE(AVG(n.hh_use_improved_sanitation_pct), 50))
+                + (100.0 - COALESCE(AVG(n.child_u5_whose_birth_was_civil_reg_pct), 50))
+              ) / 4.0, 1)                                            AS demand_index,
+              ROUND(SUM(dhc.facility_count_total) * AVG(dhc.avg_trust_score / 10.0) / 10.0, 2) AS supply_score,
+              ROUND(AVG(dhc.demand_supply_gap_score), 2)            AS gap_score,
+              FIRST(n.care_gap_classification IGNORE NULLS)          AS care_gap_classification,
+              CASE
+                WHEN AVG(dhc.avg_trust_score) >= 7.0 THEN 3
+                WHEN AVG(dhc.avg_trust_score) >= 4.0 THEN 2
+                ELSE 1
+              END                                                     AS source_type_variants
+            FROM workspace.gold_virtue_foundation_dataset.district_health_context dhc
+            LEFT JOIN workspace.gold_virtue_foundation.nfhs_5_district_health_indicators_gold n
+              ON LOWER(TRIM(dhc.district)) = LOWER(TRIM(n.district_name))
+              AND LOWER(TRIM(dhc.state)) = LOWER(TRIM(n.state_ut))
+            WHERE dhc.state IS NOT NULL AND dhc.state <> ''
+            GROUP BY dhc.state
+          )
+          SELECT * FROM dc ORDER BY gap_score DESC NULLS LAST`;
+
+        const capJoinCTE = capability
+          ? `JOIN ${SRC}.facility_capability_scoring_table fcs ON f.facility_id = fcs.facility_id AND fcs.capability = '${capability.replace(/'/g, "''")}'`
           : '';
 
-        const result = await appkit.analytics.query(
-          `WITH scored AS (
-             SELECT facility_id, MAX(trust_score) AS trust_score
-             FROM ${GOLD}.facility_trust_scores
-             ${capFtsWhere2}
-             GROUP BY facility_id
-           ),
-           facility_state AS (
+        const dynamicStateGapsSQL = `WITH facility_state AS (
              SELECT
                LOWER(TRIM(f.address_stateOrRegion)) AS state_key,
                f.address_stateOrRegion AS state,
                COUNT(*) AS facility_count,
-               AVG(COALESCE(
-                 s.trust_score / 10.0,
+               AVG(
                  LEAST(COALESCE(SIZE(SPLIT(NULLIF(TRIM(f.source_types), ''), ',')), 1) / 3.0, 1.0)
-               )) AS avg_trust_weight,
+               ) AS avg_trust_weight,
                COUNT(DISTINCT f.source_types) AS source_type_variants
              FROM ${SRC}.facilities f
-             LEFT JOIN scored s ON CAST(f.facility_id AS STRING) = s.facility_id
+             ${capJoinCTE}
              WHERE f.address_stateOrRegion IS NOT NULL AND f.address_stateOrRegion <> ''
-               ${capClause2}
              GROUP BY LOWER(TRIM(f.address_stateOrRegion)), f.address_stateOrRegion
            ),
            nfhs_state AS (
@@ -563,8 +611,9 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
              ) AS gap_score
            FROM nfhs_state ns
            FULL OUTER JOIN facility_state fs ON ns.state_key = fs.state_key
-           ORDER BY gap_score DESC NULLS LAST`,
-        );
+           ORDER BY gap_score DESC NULLS LAST`;
+
+        const result = await appkit.analytics.query(capability ? dynamicStateGapsSQL : goldStateGapsSQL);
 
         const num = (v: unknown) => (v == null ? null : Number(v));
         const gaps = (result.data ?? []).map((row) => {
@@ -640,12 +689,13 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
 
         const result = await appkit.analytics.query(
           `SELECT
-             capability,
-             COUNT(DISTINCT facility_id) AS facility_count,
-             ROUND(AVG(trust_score) / 10.0, 3) AS avg_trust_weight,
-             COUNT(DISTINCT state) AS state_count
-           FROM ${GOLD}.facility_trust_scores
-           GROUP BY capability
+             fcs.capability,
+             COUNT(DISTINCT fcs.facility_id) AS facility_count,
+             ROUND(AVG(fcs.confidence_score), 2) AS avg_trust_weight,
+             COUNT(DISTINCT f.address_stateOrRegion) AS state_count
+           FROM ${SRC}.facility_capability_scoring_table fcs
+           JOIN ${SRC}.facilities f ON fcs.facility_id = f.facility_id
+           GROUP BY fcs.capability
            ORDER BY facility_count DESC`,
         );
 
@@ -681,13 +731,29 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
           computeProfile(),
         ]);
 
-        const listSettled = await Promise.allSettled([
-          appkit.analytics.query(DUPLICATES_SQL),       // 0
-          appkit.analytics.query(NULLBYTES_SQL),        // 1
-          appkit.analytics.query(GEO_SQL),              // 2
-          appkit.analytics.query(SOURCE_MISMATCH_SQL),  // 3
-          appkit.analytics.query(CONTRADICTIONS_SQL),   // 4
-          appkit.analytics.query(SUSPICIOUS_SQL),       // 5
+        const [listSettled, anomalyResult] = await Promise.all([
+          Promise.allSettled([
+            appkit.analytics.query(DUPLICATES_SQL),       // 0
+            appkit.analytics.query(NULLBYTES_SQL),        // 1
+            appkit.analytics.query(GEO_SQL),              // 2
+            appkit.analytics.query(SOURCE_MISMATCH_SQL),  // 3
+            appkit.analytics.query(CONTRADICTIONS_SQL),   // 4
+            appkit.analytics.query(SUSPICIOUS_SQL),       // 5
+          ]),
+          appkit.analytics.query(
+            `SELECT
+               CAST(facility_id AS INT) AS facility_id,
+               TRY_CAST(facility_name AS STRING) AS facility_name,
+               TRY_CAST(alert_type AS STRING) AS alert_type,
+               TRY_CAST(severity AS STRING) AS severity,
+               TRY_CAST(description AS STRING) AS description,
+               TRY_CAST(detected_date AS STRING) AS detected_date
+             FROM workspace.gold_virtue_foundation_dataset.anomaly_alerts
+             ORDER BY
+               CASE severity WHEN 'HIGH' THEN 0 WHEN 'MEDIUM' THEN 1 ELSE 2 END ASC,
+               detected_date DESC
+             LIMIT 200`,
+          ).catch(() => ({ data: [] as Record<string, unknown>[] })),
         ]);
 
         const listOf = (i: number): Record<string, unknown>[] => {
@@ -716,6 +782,11 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
         const coerceId = <T extends Record<string, unknown>>(r: T) =>
           ({ ...r, facility_id: num(r.facility_id) });
 
+        const anomalyAlerts = (anomalyResult.data ?? []).map(r => ({
+          ...r,
+          facility_id: num(r.facility_id),
+        }));
+
         const body = {
           duplicates:       listOf(0).map(r => ({ ...coerceId(r), dup_count: num(r.dup_count) })),
           nullBytes:        listOf(1).map(coerceId),
@@ -723,6 +794,7 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
           sourceMismatch:   listOf(3).map(coerceId),
           contradictions:   listOf(4).map(coerceId),
           suspicious:       listOf(5).map(coerceId),
+          anomalyAlerts,
           listErrors,
           sparseFields,
           issueCounts: {
@@ -774,6 +846,83 @@ export function setupVirtueHealthRoutes(appkit: AppKitWithAnalytics) {
       } catch (err) {
         console.error('[readiness/top-records] Query failed:', err);
         res.status(500).json({ error: 'Failed to load top records' });
+      }
+    });
+
+    // ── Track 3: Referral Copilot ────────────────────────────────────────────
+
+    const REFERRAL_CAPS = new Set([
+      'icu','emergency','maternity','oncology','trauma','nicu','cardiology','surgery',
+    ]);
+
+    app.get('/api/referral/states', async (_req, res) => {
+      try {
+        const result = await appkit.analytics.query(
+          `SELECT DISTINCT state
+           FROM workspace.silver_virtue_foundation.facility_capability_summary
+           WHERE state IS NOT NULL AND state <> ''
+           ORDER BY state ASC`,
+        );
+        res.json({ states: (result.data ?? []).map((r) => r.state as string) });
+      } catch (err) {
+        console.error('[referral/states] Query failed:', err);
+        res.status(500).json({ error: 'Failed to load states' });
+      }
+    });
+
+    app.get('/api/referral/search', async (req, res) => {
+      try {
+        const state     = (req.query.state       as string | undefined) ?? '';
+        const cap       = (req.query.capability  as string | undefined) ?? '';
+
+        if (!state) { res.status(400).json({ error: 'state is required' }); return; }
+        if (!REFERRAL_CAPS.has(cap)) {
+          res.status(400).json({ error: `capability must be one of: ${[...REFERRAL_CAPS].join(', ')}` });
+          return;
+        }
+
+        const result = await appkit.analytics.query(
+          `SELECT
+             CAST(facility_id AS INT)             AS facility_id,
+             TRY_CAST(facility_name AS STRING)    AS name,
+             TRY_CAST(city AS STRING)             AS city,
+             TRY_CAST(state AS STRING)            AS state,
+             TRY_CAST(address AS STRING)          AS address,
+             TRY_CAST(phone AS STRING)            AS phone,
+             TRY_CAST(email AS STRING)            AS email,
+             TRY_CAST(website AS STRING)          AS website,
+             CAST(latitude  AS DOUBLE)            AS latitude,
+             CAST(longitude AS DOUBLE)            AS longitude,
+             ROUND(CAST(${cap}_score  AS DOUBLE), 2) AS cap_score,
+             TRY_CAST(${cap}_level   AS STRING)   AS cap_level,
+             ROUND(CAST(overall_trust_score AS DOUBLE), 2) AS overall_trust_score,
+             CAST(doctors AS INT)                 AS doctors,
+             CAST(beds    AS INT)                 AS beds,
+             CAST(total_specialties AS INT)        AS total_specialties,
+             CAST(total_equipment   AS INT)        AS total_equipment
+           FROM workspace.silver_virtue_foundation.facility_capability_summary
+           WHERE state = '${state.replace(/'/g, "''")}'
+             AND ${cap}_level IN ('Strong Evidence', 'Partial Evidence')
+           ORDER BY ${cap}_score DESC NULLS LAST, beds DESC NULLS LAST
+           LIMIT 20`,
+        );
+
+        const num = (v: unknown) => (v == null ? null : Number(v));
+        const facilities = (result.data ?? []).map((r) => ({
+          ...r,
+          facility_id:        num(r.facility_id),
+          cap_score:          num(r.cap_score),
+          overall_trust_score:num(r.overall_trust_score),
+          doctors:            num(r.doctors),
+          beds:               num(r.beds),
+          total_specialties:  num(r.total_specialties),
+          total_equipment:    num(r.total_equipment),
+        }));
+
+        res.json({ facilities, capability: cap, state });
+      } catch (err) {
+        console.error('[referral/search] Query failed:', err);
+        res.status(500).json({ error: 'Failed to search referrals', detail: String(err) });
       }
     });
   });

@@ -158,7 +158,7 @@ export function DataReadinessPage() {
     useReadinessProfile(reloadKey);
   const {
     duplicates, nullBytes, geoContradictions, sourceMismatch, contradictions, suspicious,
-    sparseFields, issueCounts, listErrors, loading: issuesLoading, error: issuesError, syncing: issuesSyncing,
+    anomalyAlerts, sparseFields, issueCounts, listErrors, loading: issuesLoading, error: issuesError, syncing: issuesSyncing,
   } = useReadinessIssues(reloadKey);
   const { records, flaggedTotal, loading: recordsLoading, error: recordsError, syncing: recordsSyncing } =
     useTopRecords(reloadKey);
@@ -231,8 +231,9 @@ export function DataReadinessPage() {
               duplicates={duplicates} nullBytes={nullBytes}
               geoContradictions={geoContradictions} sourceMismatch={sourceMismatch}
               contradictions={contradictions} suspicious={suspicious}
-              sparseFields={sparseFields} issueCounts={issueCounts}
-              listErrors={listErrors} issuesError={issuesError} loading={issuesLoading}
+              anomalyAlerts={anomalyAlerts} sparseFields={sparseFields}
+              issueCounts={issueCounts} listErrors={listErrors}
+              issuesError={issuesError} loading={issuesLoading}
             />
           </div>
 

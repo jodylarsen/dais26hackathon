@@ -1,0 +1,18 @@
+resources:
+  jobs:
+    ingest_geonames:
+      name: "[virtue-health] Ingest GeoNames Pincodes"
+      tasks:
+        - task_key: ingest
+          notebook_task:
+            notebook_path: ../src/ingest_geonames.py
+          # no cluster config = serverless
+
+      schedule:
+        quartz_cron_expression: "0 0 3 1 * ?"   # 1st of each month at 03:00 IST
+        timezone_id: "Asia/Kolkata"
+        pause_status: PAUSED                      # unpause to activate
+
+      tags:
+        track: enrichment
+        source: geonames

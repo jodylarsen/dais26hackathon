@@ -44,7 +44,17 @@ export function FacilitiesPage() {
   const [stateFilter, setStateFilter] = useState('');
   const [page, setPage] = useState(1);
   const [states, setStates] = useState<string[]>([]);
+  const [capFlag, setCapFlag] = useState('');
   const [selectedFacilityId, setSelectedFacilityId] = useState<number | null>(null);
+
+  const CAP_CHIPS: { label: string; flag: string }[] = [
+    { label: 'ICU',       flag: 'has_icu' },
+    { label: 'Emergency', flag: 'has_emergency' },
+    { label: 'Maternity', flag: 'has_maternity' },
+    { label: 'Oncology',  flag: 'has_oncology' },
+    { label: 'Trauma',    flag: 'has_trauma' },
+    { label: 'NICU',      flag: 'has_nicu' },
+  ];
 
   // Debounce search input
   useEffect(() => {
@@ -75,6 +85,7 @@ export function FacilitiesPage() {
     const params = new URLSearchParams();
     if (debouncedSearch) params.set('search', debouncedSearch);
     if (stateFilter) params.set('state', stateFilter);
+    if (capFlag) params.set('capFlag', capFlag);
     params.set('page', String(page));
 
     fetch(`/api/facilities?${params.toString()}`)
@@ -97,7 +108,7 @@ export function FacilitiesPage() {
       });
 
     return () => { cancelled = true; };
-  }, [debouncedSearch, stateFilter, page]);
+  }, [debouncedSearch, stateFilter, capFlag, page]);
 
   const isSyncing = data?.syncing === true;
 
@@ -139,6 +150,26 @@ export function FacilitiesPage() {
             ))}
           </SelectContent>
         </Select>
+      </div>
+
+      {/* Capability filter chips */}
+      <div className="flex flex-wrap gap-2">
+        {CAP_CHIPS.map(({ label, flag }) => {
+          const active = capFlag === flag;
+          return (
+            <button
+              key={flag}
+              onClick={() => { setCapFlag(active ? '' : flag); setPage(1); }}
+              className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                active
+                  ? 'bg-[#FF3621] border-[#FF3621] text-white'
+                  : 'bg-background border-border text-muted-foreground hover:border-[#FF3621]/60 hover:text-foreground'
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
       </div>
 
       {error && (

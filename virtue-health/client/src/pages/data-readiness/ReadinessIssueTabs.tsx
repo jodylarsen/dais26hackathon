@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Tabs, TabsList, TabsTrigger, TabsContent, Card, CardContent, CardHeader, CardTitle, Skeleton } from '@databricks/appkit-ui/react';
 import type {
   Duplicate, NullByteRecord, GeoContradiction, SourceMismatch,
-  Issue, SparseField, IssueCounts, ListErrors,
+  Issue, SparseField, IssueCounts, ListErrors, AnomalyAlert,
 } from './types';
 
 function safeStr(v: unknown, fallback = '—'): string {
@@ -48,9 +48,15 @@ function Cap({ children }: { children: ReactNode }) {
   return <p className="text-xs text-muted-foreground mb-2">{children}</p>;
 }
 
+const SEVERITY_CLASS: Record<string, string> = {
+  HIGH:   'bg-red-100 text-red-800 border-red-200',
+  MEDIUM: 'bg-amber-100 text-amber-800 border-amber-200',
+  LOW:    'bg-blue-100 text-blue-800 border-blue-200',
+};
+
 export function ReadinessIssueTabs({
   duplicates, nullBytes, geoContradictions, sourceMismatch, contradictions, suspicious,
-  sparseFields, issueCounts, listErrors, issuesError, loading,
+  anomalyAlerts, sparseFields, issueCounts, listErrors, issuesError, loading,
 }: {
   duplicates: Duplicate[];
   nullBytes: NullByteRecord[];
@@ -58,6 +64,7 @@ export function ReadinessIssueTabs({
   sourceMismatch: SourceMismatch[];
   contradictions: Issue[];
   suspicious: Issue[];
+  anomalyAlerts: AnomalyAlert[];
   sparseFields: SparseField[];
   issueCounts: IssueCounts | null;
   listErrors: ListErrors | null;
@@ -88,6 +95,7 @@ export function ReadinessIssueTabs({
               <TabsTrigger value="contradictions">Contradictions ({badge(c?.contradiction)})</TabsTrigger>
               <TabsTrigger value="suspicious">Suspicious ({badge(c?.suspicious)})</TabsTrigger>
               <TabsTrigger value="sparse">Sparse Fields</TabsTrigger>
+              <TabsTrigger value="anomalies">Anomaly Alerts ({loading ? '…' : anomalyAlerts.length})</TabsTrigger>
             </TabsList>
 
             {/* AC2 — Duplicates */}
@@ -297,6 +305,42 @@ export function ReadinessIssueTabs({
                       </div>
                     ))}
                   </div>
+                </>
+              )}
+            </TabsContent>
+            {/* Anomaly Alerts (gold layer) */}
+            <TabsContent value="anomalies">
+              {loading ? <Skeletons /> : anomalyAlerts.length === 0 ? (
+                <CleanMsg msg="No anomaly alerts from the gold layer." />
+              ) : (
+                <>
+                  <Cap>Facility-level anomalies detected by the gold scoring pipeline. HIGH severity alerts warrant immediate review.</Cap>
+                  <table className="w-full text-xs">
+                    <thead><tr className="border-b border-border/60 text-left">
+                      <th className="pb-1.5 pr-3 font-medium text-muted-foreground">Facility</th>
+                      <th className="pb-1.5 pr-3 font-medium text-muted-foreground">Alert Type</th>
+                      <th className="pb-1.5 pr-3 font-medium text-muted-foreground">Severity</th>
+                      <th className="pb-1.5 pr-3 font-medium text-muted-foreground">Description</th>
+                      <th className="pb-1.5 font-medium text-muted-foreground">Date</th>
+                    </tr></thead>
+                    <tbody>
+                      {anomalyAlerts.map((a, i) => (
+                        <tr key={`${a.facility_id}-${i}`} className="border-b border-border/40 last:border-0">
+                          <td className="py-1.5 pr-3 text-foreground max-w-[140px] truncate">{safeStr(a.facility_name)}</td>
+                          <td className="py-1.5 pr-3 text-muted-foreground max-w-[100px] truncate">{safeStr(a.alert_type)}</td>
+                          <td className="py-1.5 pr-3">
+                            {a.severity ? (
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${SEVERITY_CLASS[a.severity.toUpperCase()] ?? 'bg-muted text-muted-foreground border-border'}`}>
+                                {a.severity}
+                              </span>
+                            ) : '—'}
+                          </td>
+                          <td className="py-1.5 pr-3 text-muted-foreground max-w-[200px] truncate">{safeStr(a.description)}</td>
+                          <td className="py-1.5 text-muted-foreground whitespace-nowrap">{safeStr(a.detected_date)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </>
               )}
             </TabsContent>

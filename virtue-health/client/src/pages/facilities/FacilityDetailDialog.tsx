@@ -19,6 +19,27 @@ interface TrustScore {
   source_count: number;
 }
 
+interface GoldTrustSignals {
+  ts_branding: number | null;
+  ts_social: number | null;
+  ts_activity: number | null;
+  ts_engagement: number | null;
+  ts_estab: number | null;
+  ts_info: number | null;
+  ts_staff: number | null;
+  trust_score_overall: number | null;
+}
+
+const SIGNAL_LABELS: { key: keyof GoldTrustSignals; label: string }[] = [
+  { key: 'ts_estab',      label: 'Establishment' },
+  { key: 'ts_info',       label: 'Information Quality' },
+  { key: 'ts_staff',      label: 'Staff' },
+  { key: 'ts_branding',   label: 'Branding' },
+  { key: 'ts_social',     label: 'Social Media' },
+  { key: 'ts_activity',   label: 'Activity' },
+  { key: 'ts_engagement', label: 'Engagement' },
+];
+
 const TRUST_LEVEL_CLASS: Record<string, string> = {
   Strong:     'bg-green-100 text-green-800 border-green-200',
   Partial:    'bg-blue-100 text-blue-800 border-blue-200',
@@ -32,7 +53,6 @@ interface FacilityDetail {
   description: unknown;
   organization_type: unknown;
   capability: unknown;
-  capability_status: unknown;
   specialties: unknown;
   equipment: unknown;
   procedure: unknown;
@@ -44,6 +64,7 @@ interface FacilityDetail {
   latitude: unknown;
   longitude: unknown;
   trust_scores: TrustScore[];
+  gold_trust_signals: GoldTrustSignals | null;
 }
 
 interface Props {
@@ -113,7 +134,7 @@ export function FacilityDetailDialog({ facilityId, onClose }: Props) {
               <Building2 className="h-4 w-4 text-[#FF3621]" />
             </div>
             <span className="truncate">
-              {loading ? <Skeleton className="h-5 w-48 inline-block" /> : (facility?.name || '—')}
+              {loading ? <Skeleton className="h-5 w-48 inline-block" /> : String(facility?.name ?? '—')}
             </span>
           </DialogTitle>
         </DialogHeader>
@@ -144,7 +165,7 @@ export function FacilityDetailDialog({ facilityId, onClose }: Props) {
               <Field label="Organization Type" value={facility.organization_type} />
             </div>
 
-            {facility.description && (
+            {!!facility.description && (
               <Field label="Description" value={facility.description} />
             )}
 
@@ -174,7 +195,7 @@ export function FacilityDetailDialog({ facilityId, onClose }: Props) {
             <Separator />
 
             {/* Capabilities */}
-            {(facility.capability || facility.capability_status || facility.specialties || facility.equipment || facility.procedure) && (
+            {!!(facility.capability || facility.specialties || facility.equipment || facility.procedure) && (
               <>
                 <div>
                   <div className="flex items-center gap-1.5 mb-2">
@@ -182,10 +203,7 @@ export function FacilityDetailDialog({ facilityId, onClose }: Props) {
                     <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Capabilities</span>
                   </div>
                   <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <Field label="Capability" value={facility.capability} />
-                      <Field label="Status" value={facility.capability_status} />
-                    </div>
+                    <Field label="Capability" value={facility.capability} />
                     <TagList label="Specialties" value={facility.specialties} />
                     <TagList label="Equipment" value={facility.equipment} />
                     <TagList label="Procedures" value={facility.procedure} />
@@ -196,7 +214,7 @@ export function FacilityDetailDialog({ facilityId, onClose }: Props) {
             )}
 
             {/* Sources */}
-            {(facility.source_types || facility.source_ids) && (
+            {!!(facility.source_types || facility.source_ids) && (
               <div>
                 <div className="flex items-center gap-1.5 mb-2">
                   <Link className="h-3.5 w-3.5 text-blue-500" />
@@ -209,22 +227,61 @@ export function FacilityDetailDialog({ facilityId, onClose }: Props) {
               </div>
             )}
 
-            {/* Trust scores from gold scoring model */}
+            {/* Gold trust signal breakdown */}
+            {facility.gold_trust_signals && (
+              <>
+                <Separator />
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-1.5">
+                      <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
+                      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Trust Signal Breakdown</span>
+                    </div>
+                    {facility.gold_trust_signals.trust_score_overall != null && (
+                      <span className="text-sm font-bold text-emerald-600">
+                        {facility.gold_trust_signals.trust_score_overall.toFixed(1)}<span className="text-xs font-normal text-muted-foreground">/10</span>
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    {SIGNAL_LABELS.map(({ key, label }) => {
+                      const val = facility.gold_trust_signals![key];
+                      const pct = val != null ? (val / 10) * 100 : 0;
+                      const barColor = pct >= 70 ? 'bg-emerald-500' : pct >= 40 ? 'bg-amber-400' : 'bg-red-400';
+                      return (
+                        <div key={key} className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground w-28 shrink-0">{label}</span>
+                          <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                            <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+                          </div>
+                          <span className="text-xs tabular-nums text-muted-foreground w-8 text-right">
+                            {val != null ? val.toFixed(1) : '—'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-2">Gold layer · 7 trust dimensions · scale 0–10</p>
+                </div>
+              </>
+            )}
+
+            {/* Capability-level trust scores */}
             {facility.trust_scores.length > 0 && (
               <>
                 <Separator />
                 <div>
                   <div className="flex items-center gap-1.5 mb-3">
-                    <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
-                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Trust Scores</span>
+                    <ShieldCheck className="h-3.5 w-3.5 text-blue-500" />
+                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Capability Confidence</span>
                   </div>
                   <div className="space-y-2">
                     {facility.trust_scores.map((ts) => (
                       <div key={ts.capability} className="flex items-center gap-2">
-                        <span className="text-xs text-foreground w-24 shrink-0">{ts.capability}</span>
+                        <span className="text-xs text-foreground w-24 shrink-0 truncate">{ts.capability}</span>
                         <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
                           <div
-                            className="h-full rounded-full bg-emerald-500"
+                            className="h-full rounded-full bg-blue-500"
                             style={{ width: `${(ts.trust_score / 10) * 100}%` }}
                           />
                         </div>
@@ -238,7 +295,7 @@ export function FacilityDetailDialog({ facilityId, onClose }: Props) {
                     ))}
                   </div>
                   <p className="text-[10px] text-muted-foreground mt-2">
-                    Score 0–10 · 5 components: sources, completeness, digital, attributes, contact
+                    Score 0–10 · enhanced model: text evidence + specialty depth + regional NFHS
                   </p>
                 </div>
               </>

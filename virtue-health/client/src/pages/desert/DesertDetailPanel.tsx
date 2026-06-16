@@ -126,6 +126,22 @@ export function DesertDetailPanel({ open, onClose, gap }: DesertDetailPanelProps
                 </div>
               )}
 
+              {/* Care gap classification from NFHS gold */}
+              {gap.care_gap_classification && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Care gap classification</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${
+                    /high/i.test(gap.care_gap_classification)
+                      ? 'bg-red-100 text-red-800 border-red-200'
+                      : /medium/i.test(gap.care_gap_classification)
+                        ? 'bg-amber-100 text-amber-800 border-amber-200'
+                        : 'bg-green-100 text-green-800 border-green-200'
+                  }`}>
+                    {gap.care_gap_classification}
+                  </span>
+                </div>
+              )}
+
               {/* Limitation note */}
               <div className="flex gap-2 text-xs text-muted-foreground bg-muted/30 rounded-md p-3">
                 <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-amber-500" />

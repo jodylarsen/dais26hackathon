@@ -77,3 +77,12 @@ export interface ListErrors {
   contradictions: boolean;
   suspicious: boolean;
 }
+
+export interface AnomalyAlert {
+  facility_id: number;
+  facility_name: string | null;
+  alert_type: string | null;
+  severity: string | null;
+  description: string | null;
+  detected_date: string | null;
+}

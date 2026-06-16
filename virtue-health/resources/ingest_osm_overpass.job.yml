@@ -1,0 +1,19 @@
+resources:
+  jobs:
+    ingest_osm_overpass:
+      name: "[virtue-health] Ingest OSM Healthcare Facilities"
+      tasks:
+        - task_key: ingest
+          notebook_task:
+            notebook_path: ../src/ingest_osm_overpass.py
+          # no cluster config = serverless
+          timeout_seconds: 900  # Overpass full-India query can take up to 5 min
+
+      schedule:
+        quartz_cron_expression: "0 0 2 ? * SUN"  # every Sunday at 02:00 IST
+        timezone_id: "Asia/Kolkata"
+        pause_status: PAUSED
+
+      tags:
+        track: enrichment
+        source: osm_overpass

@@ -9,6 +9,26 @@ sync:
     - dist/
     - client/dist/
     - src/
+  exclude:
+    - package-lock.json
+    - package.json
+    - appkit.plugins.json
+    - tsconfig.json
+    - tsconfig.client.json
+    - tsconfig.server.json
+    - tsconfig.shared.json
+    - tsdown.server.config.ts
+    - eslint.config.js
+    - playwright.config.ts
+    - vitest.config.ts
+    - README.md
+    - client/src/
+    - client/vite.config.ts
+    - server/
+    - shared/
+    - tests/
+    - docs/
+    - node_modules/
 
 variables:
   warehouse_id:

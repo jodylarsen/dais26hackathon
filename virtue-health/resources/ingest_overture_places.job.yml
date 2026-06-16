@@ -1,0 +1,18 @@
+resources:
+  jobs:
+    ingest_overture_places:
+      name: "[virtue-health] Ingest Overture Maps Places — India Healthcare"
+      tasks:
+        - task_key: ingest
+          notebook_task:
+            notebook_path: ../src/ingest_overture_places.py
+          # no cluster config = serverless
+
+      schedule:
+        quartz_cron_expression: "0 0 4 2 * ?"   # 2nd of each month at 04:00 IST
+        timezone_id: "Asia/Kolkata"
+        pause_status: PAUSED
+
+      tags:
+        track: enrichment
+        source: overture_maps

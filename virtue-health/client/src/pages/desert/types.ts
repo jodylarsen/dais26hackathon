@@ -12,6 +12,7 @@ export interface StateGap {
   avg_water: number | null;
   avg_sanitation: number | null;
   avg_birth_reg: number | null;
+  care_gap_classification?: string | null;
 }
 
 export interface HeatmapPoint {

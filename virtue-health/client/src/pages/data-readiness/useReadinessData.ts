@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type {
   FieldProfile, Duplicate, NullByteRecord, GeoContradiction,
-  SourceMismatch, Issue, SparseField, TopRecord, IssueCounts, ListErrors,
+  SourceMismatch, Issue, SparseField, TopRecord, IssueCounts, ListErrors, AnomalyAlert,
 } from './types';
 
 export function useReadinessProfile(reloadKey: number) {
@@ -40,6 +40,7 @@ export function useReadinessIssues(reloadKey: number) {
   const [sourceMismatch, setSourceMismatch] = useState<SourceMismatch[]>([]);
   const [contradictions, setContradictions] = useState<Issue[]>([]);
   const [suspicious, setSuspicious] = useState<Issue[]>([]);
+  const [anomalyAlerts, setAnomalyAlerts] = useState<AnomalyAlert[]>([]);
   const [sparseFields, setSparseFields] = useState<SparseField[]>([]);
   const [issueCounts, setIssueCounts] = useState<IssueCounts | null>(null);
   const [listErrors, setListErrors] = useState<ListErrors | null>(null);
@@ -63,6 +64,7 @@ export function useReadinessIssues(reloadKey: number) {
         setSourceMismatch(data.sourceMismatch ?? []);
         setContradictions(data.contradictions ?? []);
         setSuspicious(data.suspicious ?? []);
+        setAnomalyAlerts(data.anomalyAlerts ?? []);
         setSparseFields(data.sparseFields ?? []);
         setIssueCounts(data.issueCounts ?? null);
         setListErrors(data.listErrors ?? null);
@@ -72,7 +74,7 @@ export function useReadinessIssues(reloadKey: number) {
     return () => { cancelled = true; };
   }, [reloadKey]);
 
-  return { duplicates, nullBytes, geoContradictions, sourceMismatch, contradictions, suspicious, sparseFields, issueCounts, listErrors, loading, error, syncing };
+  return { duplicates, nullBytes, geoContradictions, sourceMismatch, contradictions, suspicious, anomalyAlerts, sparseFields, issueCounts, listErrors, loading, error, syncing };
 }
 
 export function useTopRecords(reloadKey: number) {
