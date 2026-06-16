@@ -15,12 +15,12 @@ import { AlertCircle, MapPin } from 'lucide-react';
 
 interface District {
   district_name: string;
-  state_ut: string;
-  households_surveyed: number | null;
-  hh_electricity_pct: number | null;
-  hh_improved_water_pct: number | null;
-  hh_use_improved_sanitation_pct: number | null;
-  child_u5_whose_birth_was_civil_reg_pct: number | null;
+  state: string;
+  households_surveyed: number | string | null;
+  hh_electricity_pct: number | string | null;
+  hh_improved_water_pct: number | string | null;
+  hh_use_improved_sanitation_pct: number | string | null;
+  child_u5_whose_birth_was_civil_reg_pct: number | string | null;
 }
 
 interface DistrictsResponse {
@@ -28,19 +28,25 @@ interface DistrictsResponse {
   syncing?: boolean;
 }
 
-function pct(val: number | null): string {
+function pct(val: number | string | null): string {
   if (val === null || val === undefined) return '—';
-  return `${val.toFixed(1)}%`;
+  const n = Number(val);
+  if (isNaN(n)) return '—';
+  return `${n.toFixed(1)}%`;
 }
 
-function num(val: number | null): string {
+function num(val: number | string | null): string {
   if (val === null || val === undefined) return '—';
-  return val.toLocaleString();
+  const n = Number(val);
+  if (isNaN(n)) return '—';
+  return n.toLocaleString();
 }
 
-function PctBar({ value }: { value: number | null }) {
+function PctBar({ value }: { value: number | string | null }) {
   if (value === null || value === undefined) return <span className="text-muted-foreground">—</span>;
-  const clamped = Math.min(100, Math.max(0, value));
+  const n = Number(value);
+  if (isNaN(n)) return <span className="text-muted-foreground">—</span>;
+  const clamped = Math.min(100, Math.max(0, n));
   const color =
     clamped >= 75
       ? 'bg-emerald-500'
@@ -53,7 +59,7 @@ function PctBar({ value }: { value: number | null }) {
       <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
         <div className={`h-full ${color} rounded-full`} style={{ width: `${clamped}%` }} />
       </div>
-      <span className="text-xs tabular-nums w-10 text-right">{pct(value)}</span>
+      <span className="text-xs tabular-nums w-10 text-right">{pct(n)}</span>
     </div>
   );
 }
@@ -222,7 +228,7 @@ export function DistrictsPage() {
                     ))
                   : (data?.districts ?? []).map((d) => (
                       <tr
-                        key={`${d.district_name}-${d.state_ut}`}
+                        key={`${d.district_name}-${d.state}`}
                         className="border-b last:border-0 hover:bg-muted/20 transition-colors"
                       >
                         <td className="px-4 py-3 font-medium text-foreground">
@@ -232,7 +238,7 @@ export function DistrictsPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">
-                          {d.state_ut}
+                          {d.state}
                         </td>
                         <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell tabular-nums">
                           {num(d.households_surveyed)}

@@ -16,14 +16,14 @@ export interface NullByteRecord {
   facility_id: number;
   name: string | null;
   description: string | null;
-  address_stateorregion: string | null;
+  state: string | null;
 }
 
 export interface GeoContradiction {
   facility_id: number;
   name: string | null;
   address_city: string | null;
-  address_stateorregion: string | null;
+  state: string | null;
 }
 
 export interface SourceMismatch {
@@ -37,7 +37,7 @@ export interface Issue {
   facility_id: number;
   name: string | null;
   capability: string | null;
-  address_stateorregion: string | null;
+  state: string | null;
 }
 
 export interface SparseField {
@@ -50,7 +50,7 @@ export interface TopRecord {
   facility_id: number;
   name: string | null;
   address_city: string | null;
-  address_stateorregion: string | null;
+  state: string | null;
   capability: string | null;
   source_types: string | null;
   source_ids: string | null;

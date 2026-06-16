@@ -54,7 +54,7 @@ export function ReadinessTopRecords({
                           {rec.name ?? '—'}
                         </td>
                         <td className="py-1.5 pr-3 text-muted-foreground">
-                          {rec.address_stateorregion ?? '—'}
+                          {rec.state ?? '—'}
                         </td>
                         <td className="py-1.5 pr-3">
                           <span className="font-semibold" style={{ color: scoreColor(rec.heavy_score) }}>

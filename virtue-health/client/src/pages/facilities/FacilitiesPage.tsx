@@ -15,13 +15,14 @@ import {
   SelectValue,
 } from '@databricks/appkit-ui/react';
 import { Search, ChevronLeft, ChevronRight, AlertCircle, Building2 } from 'lucide-react';
+import { FacilityDetailDialog } from './FacilityDetailDialog';
 
 interface Facility {
   facility_id: number;
   name: string;
   organization_type: string;
   address_city: string;
-  address_stateorregion: string;
+  state: string;
   address_country: string;
 }
 
@@ -43,6 +44,7 @@ export function FacilitiesPage() {
   const [stateFilter, setStateFilter] = useState('');
   const [page, setPage] = useState(1);
   const [states, setStates] = useState<string[]>([]);
+  const [selectedFacilityId, setSelectedFacilityId] = useState<number | null>(null);
 
   // Debounce search input
   useEffect(() => {
@@ -208,7 +210,8 @@ export function FacilitiesPage() {
                   : (data?.facilities ?? []).map((f) => (
                       <tr
                         key={f.facility_id}
-                        className="border-b last:border-0 hover:bg-muted/20 transition-colors"
+                        className="border-b last:border-0 hover:bg-muted/20 transition-colors cursor-pointer"
+                        onClick={() => setSelectedFacilityId(f.facility_id)}
                       >
                         <td className="px-4 py-3 font-medium text-foreground max-w-xs">
                           <div className="flex items-center gap-2">
@@ -229,7 +232,7 @@ export function FacilitiesPage() {
                           {f.address_city || '—'}
                         </td>
                         <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">
-                          {f.address_stateorregion || '—'}
+                          {f.state || '—'}
                         </td>
                       </tr>
                     ))}
@@ -245,6 +248,11 @@ export function FacilitiesPage() {
           </div>
         </CardContent>
       </Card>
+
+      <FacilityDetailDialog
+        facilityId={selectedFacilityId}
+        onClose={() => setSelectedFacilityId(null)}
+      />
 
       {/* Pagination */}
       {!loading && data && data.totalPages > 1 && (

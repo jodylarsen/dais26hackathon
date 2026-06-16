@@ -137,7 +137,7 @@ export function ReadinessIssueTabs({
                          <tr key={r.facility_id} className="border-b border-border/40 last:border-0">
                            <td className="py-1 pr-3 tabular-nums text-muted-foreground">{r.facility_id}</td>
                            <td className="py-1 pr-3 text-foreground max-w-[200px] truncate">{r.name ?? '—'}</td>
-                           <td className="py-1 text-muted-foreground">{r.address_stateorregion ?? '—'}</td>
+                           <td className="py-1 text-muted-foreground">{r.state ?? '—'}</td>
                          </tr>
                        ))}
                      </tbody>
@@ -167,7 +167,7 @@ export function ReadinessIssueTabs({
                          <tr key={r.facility_id} className="border-b border-border/40 last:border-0">
                            <td className="py-1 pr-3 text-foreground max-w-[160px] truncate">{r.name ?? '—'}</td>
                            <td className="py-1 pr-3 text-muted-foreground">{r.address_city ?? '—'}</td>
-                           <td className="py-1 text-muted-foreground">{r.address_stateorregion ?? '—'}</td>
+                           <td className="py-1 text-muted-foreground">{r.state ?? '—'}</td>
                          </tr>
                        ))}
                      </tbody>
@@ -230,7 +230,7 @@ export function ReadinessIssueTabs({
                          <tr key={r.facility_id} className="border-b border-border/40 last:border-0">
                            <td className="py-1 pr-3 text-foreground max-w-[160px] truncate">{r.name ?? '—'}</td>
                            <td className="py-1 pr-3 text-muted-foreground max-w-[130px] truncate">{r.capability ?? '—'}</td>
-                           <td className="py-1 text-muted-foreground">{r.address_stateorregion ?? '—'}</td>
+                           <td className="py-1 text-muted-foreground">{r.state ?? '—'}</td>
                          </tr>
                        ))}
                      </tbody>
@@ -263,7 +263,7 @@ export function ReadinessIssueTabs({
                          <tr key={r.facility_id} className="border-b border-border/40 last:border-0">
                            <td className="py-1 pr-3 text-foreground max-w-[160px] truncate">{r.name ?? '—'}</td>
                            <td className="py-1 pr-3 text-muted-foreground max-w-[130px] truncate">{r.capability ?? '—'}</td>
-                           <td className="py-1 text-muted-foreground">{r.address_stateorregion ?? '—'}</td>
+                           <td className="py-1 text-muted-foreground">{r.state ?? '—'}</td>
                          </tr>
                        ))}
                      </tbody>

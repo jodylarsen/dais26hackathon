@@ -20,7 +20,7 @@ export interface HeatmapPoint {
   longitude: number;
   trust_weight: number;
   capability: string | null;
-  address_stateorregion: string | null;
+  state: string | null;
 }
 
 export interface CapabilitySummaryItem {

@@ -42,13 +42,13 @@ const DATASETS: Dataset[] = [
     connectivityNote: 'ABDM sandbox returns 403 — requires NHA client registration',
   },
   {
-    rank: 2, name: 'India Post PIN Code Directory', source: 'data.gov.in',
-    access: 'data.gov.in API — register for free key (DATA_GOV_IN_API_KEY in .env)', impact: 'high',
-    fixes: ['address_stateorregion', 'address_city'],
-    summary: 'Enrich existing pincode table with taluk/tehsil to validate the city↔district↔state chain. Flag records where state ≠ pincode-derived state.',
+    rank: 2, name: 'India Post PIN Code Directory', source: 'api.postalpincode.in',
+    access: 'Free JSON API — no token required. GET /pincode/{code} → State, District, Block', impact: 'high',
+    fixes: ['state', 'address_city'],
+    summary: 'Enrich existing pincode table with District/Block to validate the city↔district↔state chain. Flag records where state ≠ pincode-derived state. Replaces data.gov.in (requires Indian phone for registration).',
     status: 'partial',
-    connectivity: 'needs-token',
-    connectivityNote: 'data.gov.in API reachable but returns 500 without a registered key',
+    connectivity: 'reachable',
+    connectivityNote: 'HTTP 200 — api.postalpincode.in/pincode/110001 confirmed (State, District, Block)',
   },
   {
     rank: 3, name: 'GeoNames Postal Codes', source: 'geonames.org/export/zip_codes.php',
@@ -89,11 +89,11 @@ const DATASETS: Dataset[] = [
   {
     rank: 7, name: 'MCA21 Company Registry', source: 'mca.gov.in / data.gov.in',
     access: 'Bulk export via data.gov.in API (DATA_GOV_IN_API_KEY in .env); mca.gov.in returns 403', impact: 'medium',
-    fixes: ['name', 'address_city', 'address_stateorregion'],
+    fixes: ['name', 'address_city', 'state'],
     summary: 'Hospitals registered as companies/trusts with a unique CIN. Legal name dedup and registered address validates facility address fields.',
     status: 'not-ingested',
     connectivity: 'needs-token',
-    connectivityNote: 'mca.gov.in returns 403 — use data.gov.in bulk export with registered API key',
+    connectivityNote: 'mca.gov.in returns 403; data.gov.in bulk export requires Indian phone for OTP',
   },
   {
     rank: 8, name: 'Wikidata SPARQL', source: 'query.wikidata.org',
@@ -246,7 +246,7 @@ export function DataReadinessPage() {
           Enrichment Roadmap — 10 Free Datasets
         </h3>
         <p className="text-xs text-muted-foreground mb-3">
-          Connectivity tested 2026-06-16 · 5 reachable · 3 need a token · 2 unreachable from cloud
+          Connectivity tested 2026-06-16 · 6 reachable · 2 need a token · 2 unreachable from cloud
         </p>
         <div className="space-y-2">
           {DATASETS.map((ds) => (
